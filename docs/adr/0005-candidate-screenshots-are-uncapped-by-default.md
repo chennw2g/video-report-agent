@@ -1,0 +1,5 @@
+# Candidate Screenshots Are Uncapped By Default
+
+Candidate screenshot collection should prioritize visual completeness over small artifact counts. `--max-screenshots 0` and `--max-candidate-screenshots 0` mean no candidate cap, and this is the default for `analyze` and `extract-frames`. A positive cap is an explicit performance or storage tradeoff; when it truncates visual coverage, `slides.json.extraction` records the cap and coverage fields, and diagnostics include `VISUAL_COVERAGE_TRUNCATED`.
+
+Report image volume is a separate concern. `video-bundle-prep` should keep `select-evidence --max-images` and `prepare-report --max-images` selective for `report.input.json`, while the bundle may retain a large `screenshots/candidates/` library. Re-running frame extraction refreshes `slides.json`, removes stale candidate screenshots from earlier passes, and prevents old screenshot records from being carried forward in `manifest.json`. Final quick/deep report mode affects `video-report` output depth and rendered image volume, not bundle candidate coverage.

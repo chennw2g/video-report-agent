@@ -1,0 +1,247 @@
+# Provider Research
+
+This document records the phase-1 provider choices.
+
+## Current Decision
+
+Do not use the full `steipete/summarize` fork as the main application base.
+
+Use it only as a reference archive for:
+
+- YouTube smoke-test behavior
+- yt-dlp cookie handling
+- Windows dependency checks
+- slide/frame extraction ideas
+- Bilibili API-first provider boundaries and fallback behavior
+
+## YouTube
+
+Primary provider: `yt-dlp`.
+
+Responsibilities:
+
+- metadata
+- native chapters when yt-dlp exposes `chapters`
+- subtitles / automatic subtitles
+- comments through `--write-comments`
+- 1080p-or-best-available working video for screenshots
+- working audio when subtitle/transcript fallback needs local transcription
+- thumbnail
+- basic format information
+
+YouTube comments will not use the YouTube Data API in phase 1.
+Default behavior must never fetch all comments.
+Authentication is explicit only: use `--cookies PATH` or `--cookies-from-browser chrome` when yt-dlp
+reports `COOKIE_REQUIRED`. On this Windows machine, direct browser cookie decryption can fail with
+DPAPI errors, so the stable path is `scripts/refresh-youtube-cookies.ps1`, which writes a Netscape
+cookies file under `%APPDATA%\video-bundle-agent\youtube.cookies.txt`.
+
+Defaults:
+
+```json
+{
+  "comment_sort": "top",
+  "max_comments": 100
+}
+```
+
+For `yt-dlp`, this maps to:
+
+```text
+--write-comments --extractor-args "youtube:comment_sort=top;max_comments=100"
+```
+
+YouTube feedback capabilities:
+
+```json
+{
+  "has_danmaku": false,
+  "has_comments": true,
+  "has_audience_feedback": true
+}
+```
+
+Transcript fallback:
+
+- Try yt-dlp subtitles / automatic subtitles first.
+- If no usable subtitle is available, download a bounded working audio file.
+- Convert the audio to 16 kHz mono WAV with ffmpeg.
+- Transcribe with local whisper.cpp when available.
+- If the local transcription tool or model is missing, write diagnostics instead of inventing transcript text.
+- Keep forced local transcription behind an explicit development option; do not enable it by default.
+- If yt-dlp reports only automatic captions and no manual subtitles, keep the platform transcript as primary and
+  write a whisper.cpp comparison transcript by default.
+- Write `transcript.comparison.json` so downstream Codex can inspect timestamped disagreements instead of manually
+  diffing full transcript files.
+
+YouTube chapter handling:
+
+- If yt-dlp returns `chapters`, normalize them to `source_chapters.json` with
+  `chapter_source = "yt_dlp.chapters"`.
+- If yt-dlp does not return chapters, write an empty `source_chapters.json`; report writing should then infer
+  natural sections from transcript/slides and should not pretend those inferred sections are official chapters.
+- YouTube chapters are only as accurate as the platform/yt-dlp metadata. They may come from uploader-created
+  chapters or platform-derived chapter metadata depending on the video.
+
+## Bilibili
+
+Primary combination: `Nemo2011/bilibili-api` (`bilibili-api-python`) + `yt-dlp` fallback.
+
+Current implementation stage: `bilibili-api-python` primary provider with bounded top-liked comments,
+optional danmaku, API playurl media download, local transcription, and `yt-dlp` fallback only when
+the API path cannot produce enough media/metadata.
+
+`bilibili-api-python` responsibilities:
+
+- BV / AV / CID / part detection
+- metadata, stats, thumbnail, and UP information
+- native player chapters through player `view_points` when available
+- bounded top-liked comments
+- optional danmaku only when explicitly requested
+- playurl/DASH media URLs for local video/audio download
+- provider raw files for audit under `raw/bilibili_api/`
+
+API media download responsibilities:
+
+- Select a 1080p-or-best-available video stream and best available audio stream.
+- Download DASH video/audio with `httpx` and Bilibili referer headers.
+- Mux video/audio with ffmpeg into a retained working video under `raw/media/`.
+- Use retained audio for whisper.cpp transcription when subtitles are unavailable.
+- Use retained working video for fixed/keyword/scene visual recall through the shared frame extractor.
+
+`yt-dlp` fallback responsibilities:
+
+- fallback metadata only if the API metadata path fails
+- fallback working video/audio only if the API playurl/media path fails
+- diagnostics for `COOKIE_REQUIRED`, `RATE_LIMITED`, or provider extraction failures
+
+Current boundaries:
+
+- Bilibili links should enter the Bilibili provider workflow directly; do not run a default
+  YouTube/yt-dlp-first path just to discover that it fails.
+- `bilibili-api-python` is the first source for BV/AV/CID/pages/stat/UP metadata.
+- `metadata.pages` is page/part metadata only. Native progress-bar chapters should be fetched separately
+  from player `view_points` and normalized to `source_chapters.json`.
+- `bilibili-api-python` fetches bounded top-liked comments.
+- `bilibili-api-python` playurl data is the first media source, avoiding known Bilibili HTTP 412
+  noise from a default yt-dlp pass.
+- `bilibili-api-python` playurl asks for high-quality DASH streams (`qn=127`, `fnval=4048`,
+  `fourk=1`), but anonymous requests can still be restricted to low-resolution streams. Pass
+  explicit Bilibili cookies when 1080p-or-better screenshots are required.
+- `yt-dlp` is a fallback, not the success-path provider.
+- If the API path fails, write `BILIBILI_API_UNAVAILABLE`, `COMMENTS_UNAVAILABLE`, or
+  `DANMAKU_UNAVAILABLE` diagnostics instead of inventing data. If player chapters cannot be fetched, write
+  `SOURCE_CHAPTERS_UNAVAILABLE` and let the report infer natural sections from transcript/slides.
+
+Default Bilibili comment collection should be top 100 by `like_count` descending until the user explicitly
+requests a different limit.
+Anonymous Bilibili comment APIs may expose the total count but return only a small first-page sample;
+authenticated pagination requires an explicit Bilibili Netscape cookies file passed with `--cookies`.
+If fewer comments are fetched than requested, keep the partial `comments.json` and write a warning
+diagnostic instead of implying top 100 was collected.
+Danmaku is disabled by default (`--max-danmaku 0`) because current phase-1 reports do not need it and
+Bilibili danmaku does not expose a reliable like-count ranking. If danmaku is explicitly enabled later,
+it must remain bounded and record sampling details.
+
+This is a personal local tool, so GPLv3 distribution concerns are not a phase-1 blocker.
+Function coverage and implementation speed take priority.
+
+## Xiaohongshu
+
+Primary references: `XHS-Downloader` + `MediaCrawler` + `ReaJason/xhs`.
+
+Current implementation stage: lightweight Xiaohongshu provider boundary with HTML initial-state note extraction,
+media URL normalization, media file download, video transcription, visual recall, and MediaCrawler-first bounded
+comment fetching. `xhs` plus the bundled local signer is retained only as an explicit fallback/debug path.
+`XHS-Downloader` is installed as an external reference/tool under
+`D:\Workshop\XHS-Downloader`, but it is not imported into the main project because the current repo does not
+build as a standard Python wheel and should not be vendored into the bundle engine. `MediaCrawler` is checked
+out under `D:\W\Codex\external\MediaCrawler` with its own uv environment and is treated as an external
+fallback/reference, not a vendored dependency.
+
+`XHS-Downloader` responsibilities:
+
+- note details
+- video/image download URLs
+- note file download
+- API/MCP call reference
+
+`MediaCrawler` responsibilities:
+
+- comments
+- nested comments
+- search
+- author homepage
+- audience feedback analysis
+
+Default Xiaohongshu comment collection should be top 100 only. Nested comments must also be bounded before
+implementation.
+
+Current comment boundary:
+
+- Top-level comments use the external MediaCrawler API smoke path by default when
+  `D:\W\Codex\external\MediaCrawler` exists, or when `XHS_MEDIACRAWLER_PATH` points to another checkout.
+  The path uses MediaCrawler's `xhshow` signing flow and an existing CDP Chrome session, writes raw debug
+  files under `raw/xiaohongshu/mediacrawler/`, and caps/sorts normalized comments by `like_count`.
+- The bundled local signer from `src/video_bundle_agent/providers/xiaohongshu/signer.py` is no longer the
+  default comment path because observed real comment calls were unstable. It remains available only when
+  `--xhs-sign-url local`, `--xhs-sign-url <url>`, or `XHS_SIGN_URL` is explicitly supplied.
+- Signing and CDP browser state are not replacements for platform permission. If Xiaohongshu blocks the
+  current account/session, record diagnostics and continue with core video evidence.
+- If Xiaohongshu returns interactive verification or account/session risk responses such as `300011`,
+  comments are recorded as `PERMISSION_REQUIRED` diagnostics and the bundle continues without comments.
+- If Xiaohongshu returns login-expired responses such as `-100`, comments are recorded as `COOKIE_REQUIRED`.
+- Normalized comments are sorted by `like_count` descending and capped by `--max-comments`, default 100.
+- Nested comments remain deferred until a bounded policy and extraction flow are validated.
+- MediaCrawler full crawler/login loops are not the default project workflow. Do not keep repeating QR/SMS
+  login attempts; record the platform error and continue with core video evidence.
+- Observed MediaCrawler smoke for `http://xhslink.com/o/AAljrp051vx`: CDP cookies were present, `selfinfo`
+  returned `code=-104` / no permission, note detail API hit CAPTCHA `461`, but the comment endpoint returned
+  three top-level comments. This proves the fallback can recover some comments, but it must not be labelled
+  as complete top 100 when the platform only returns a small sample.
+
+`ReaJason/xhs` responsibilities:
+
+- lightweight note client reference
+- field shape reference
+
+Xiaohongshu chapter handling:
+
+- The current Xiaohongshu provider does not have a reliable platform-native chapter source.
+- Do not write invented `source_chapters.json` items for Xiaohongshu.
+- For Xiaohongshu videos, reports should use Codex natural sections based on note text, transcript,
+  screenshots, and media structure. If the note author writes timestamped sections in the description,
+  those can be cited as source text, but they are not treated as a separate platform chapter API.
+
+Current cookie boundary:
+
+- Stable local cookie path: `%APPDATA%\video-bundle-agent\xiaohongshu.cookies.txt`.
+- Refresh helper: `scripts/refresh-xiaohongshu-cookies.ps1`.
+- Stable dedicated CDP Chrome profile: `%APPDATA%\video-bundle-agent\chrome-xiaohongshu-profile`.
+- CDP launch helper: `scripts/start-xiaohongshu-cdp-chrome.ps1`, default port `9231`.
+- Prefer the dedicated CDP profile for MediaCrawler comments. Cookie export is secondary because mobile
+  relogin or platform verification can invalidate the desktop API session.
+- Cookies are passed explicitly with `--cookies`; direct `--cookies-from-browser` is not supported for
+  Xiaohongshu.
+- The explicit signed `xhs` fallback usually needs cookie fields such as `a1`, `web_session`, and `webId`.
+- The local signer currently uses the `xhs` Python signing helper. It is retained for debugging compatibility,
+  not as the default comment collector.
+
+External reference notes:
+
+- `WJS-WEB/xiaohongshu-sentiment-analysis` is a Selenium/Chrome DOM scraping reference for comments and
+  PDF sentiment reports. It may be useful for a future browser-state comment fallback that scrolls the
+  logged-in web page and parses visible comment nodes.
+- It does not appear to solve signed API comments or observed API risk-control responses such as `300011`.
+  Do not import it as the primary provider path. If used, keep it behind a bounded, explicit browser-fallback
+  adapter and record diagnostics when selectors, login, or platform verification fail.
+
+Do not vendor or embed the full `MediaCrawler` framework into the main project at the start.
+Keep a small adapter/provider boundary and connect heavier pieces only when needed.
+
+## Safety Notes
+
+- Cookies may be needed for some providers, but must live outside the repository.
+- API keys must never be committed.
+- Provider failures should be represented in `diagnostics.json`.
+- Do not bypass platform risk controls, captchas, paywalls, DRM, or account restrictions.

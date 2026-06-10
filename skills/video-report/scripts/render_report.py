@@ -191,6 +191,10 @@ h1.title-very-long { font-size: 32px; }
   margin-top: 18px;
 }
 .metric-card {
+  display: grid;
+  grid-template-rows: minmax(30px, 1fr) auto;
+  align-items: stretch;
+  gap: 2px;
   min-width: 0;
   min-height: 62px;
   padding: 9px 11px;
@@ -199,6 +203,8 @@ h1.title-very-long { font-size: 32px; }
   background: var(--surface-soft);
 }
 .metric-value {
+  align-self: center;
+  min-width: 0;
   white-space: nowrap;
   color: var(--ink);
   font-size: 20px;
@@ -208,9 +214,11 @@ h1.title-very-long { font-size: 32px; }
 .metric-value.metric-long { font-size: 18px; }
 .metric-value.metric-very-long { font-size: 16px; }
 .metric-label {
-  margin-top: 3px;
+  align-self: end;
+  margin-top: 0;
   color: var(--muted);
   font-size: 12px;
+  line-height: 1.2;
 }
 .module {
   margin-top: 28px;

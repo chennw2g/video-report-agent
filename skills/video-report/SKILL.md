@@ -131,6 +131,8 @@ comment rules, label text, or content depth. Those rules belong to the content c
   can fit naturally without truncation. The renderer may auto-reduce title and metric font sizes to fit, but
   it must not hide key text with clipping or ellipses. Prefer shorter wording plus smaller fixed font classes
   over hidden text.
+- Header metric cards keep labels such as `平台`, `频道`, and `发布时间` anchored in the bottom label area.
+  Auto-shrinking the metric value must not move the label line out of alignment with neighboring cards.
 - PDF/mobile: hide or collapse navigation when needed and preserve readable single-column body flow.
 - Long PNG export: hide the left navigation and capture only the main report body.
 - Footer signature: keep a small bottom signature in the form

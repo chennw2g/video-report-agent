@@ -4,15 +4,13 @@ import json
 import mimetypes
 import os
 import re
-from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 from xhs import XhsClient
-from xhs.exception import DataFetchError, NeedVerifyError
 
 from video_bundle_agent.bundle.readiness import evaluate_bundle_readiness
 from video_bundle_agent.bundle.schema import Capabilities, SourceInfo
@@ -29,7 +27,6 @@ from video_bundle_agent.media.transcription import (
     transcribe_with_whisper_cpp,
 )
 from video_bundle_agent.media.visual_recall import create_visual_recall_slides
-from video_bundle_agent.providers.xiaohongshu.signer import sign_request
 from video_bundle_agent.tools.process import CommandError, run_command
 
 XHS_USER_AGENT = (
@@ -107,9 +104,20 @@ def _iso_from_ms(value: Any) -> str:
 
 def _extract_note_id_from_url(url: str) -> str:
     match = NOTE_ID_RE.search(url)
-    if not match:
-        raise ValueError(f"Could not resolve a Xiaohongshu note id from URL: {url}")
-    return match.group(1)
+    if match:
+        return match.group(1)
+    redirect_target = _redirect_path_from_login_url(url)
+    if redirect_target:
+        return _extract_note_id_from_url(redirect_target)
+    raise ValueError(f"Could not resolve a Xiaohongshu note id from URL: {url}")
+
+
+def _redirect_path_from_login_url(url: str) -> str | None:
+    parsed = urlparse(url if url.startswith("http") else f"https://{url}")
+    if parsed.path.rstrip("/") != "/login":
+        return None
+    redirect_values = parse_qs(parsed.query).get("redirectPath") or []
+    return redirect_values[0] if redirect_values else None
 
 
 def _load_cookie_string(cookies: Path | None) -> str:
@@ -157,7 +165,8 @@ def _resolve_source_url(source_url: str, cookie_string: str) -> str:
     with httpx.Client(follow_redirects=True, timeout=20, headers=headers) as client:
         response = client.get(source_url)
         response.raise_for_status()
-        return str(response.url)
+        resolved_url = str(response.url)
+        return _redirect_path_from_login_url(resolved_url) or resolved_url
 
 
 def _fetch_note_html(url: str, cookie_string: str) -> str:
@@ -174,7 +183,11 @@ def _note_from_initial_state(html: str, note_id: str) -> dict[str, Any]:
     match = INITIAL_STATE_RE.search(html)
     if not match:
         raise ValueError("Xiaohongshu initial state was not found in the note HTML.")
-    payload = match.group(1).replace("undefined", '""')
+    payload = re.sub(
+        r"(?P<prefix>[:\[,]\s*)undefined(?P<suffix>\s*[,\]}])",
+        r"\g<prefix>null\g<suffix>",
+        match.group(1),
+    )
     state = _snake_case_json(json.loads(payload))
     note = _deep_get(state, f"note.note_detail_map.{note_id}.note")
     if not isinstance(note, dict):
@@ -201,6 +214,8 @@ def _fetch_note_data(
 
 def _normalize_tags(note: dict[str, Any]) -> list[str]:
     tags = _deep_get(note, "tag_list", default=[]) or []
+    if isinstance(tags, str):
+        return [item.strip() for item in tags.split(",") if item.strip()]
     items: list[str] = []
     for tag in tags:
         name = _deep_get(tag, "name")
@@ -218,6 +233,16 @@ def normalize_metadata(
     interact = _deep_get(note, "interact_info", default={}) or {}
     user = _deep_get(note, "user", default={}) or {}
     note_type = str(_deep_get(note, "type", default="") or "")
+    uploader = _deep_get(user, "nickname", "nick_name", default="") or _deep_get(
+        note,
+        "nickname",
+        default="",
+    )
+    uploader_id = _deep_get(user, "user_id", default="") or _deep_get(
+        note,
+        "user_id",
+        default="",
+    )
     return {
         "source": {
             "platform": source.platform,
@@ -231,15 +256,19 @@ def normalize_metadata(
         "duration": _coerce_int(_deep_get(note, "video.capa.duration")),
         "published_at": _iso_from_ms(_deep_get(note, "time")),
         "updated_at": _iso_from_ms(_deep_get(note, "last_update_time")),
-        "uploader": _deep_get(user, "nickname", "nick_name", default="") or "",
-        "uploader_id": str(_deep_get(user, "user_id", default="") or ""),
+        "uploader": uploader or "",
+        "uploader_id": str(uploader_id or ""),
         "channel": "",
         "channel_id": "",
         "view_count": None,
-        "like_count": _coerce_int(_deep_get(interact, "liked_count")),
-        "comment_count": _coerce_int(_deep_get(interact, "comment_count")),
-        "collect_count": _coerce_int(_deep_get(interact, "collected_count")),
-        "share_count": _coerce_int(_deep_get(interact, "share_count")),
+        "like_count": _coerce_int(_deep_get(interact, "liked_count"))
+        or _coerce_int(_deep_get(note, "liked_count")),
+        "comment_count": _coerce_int(_deep_get(interact, "comment_count"))
+        or _coerce_int(_deep_get(note, "comment_count")),
+        "collect_count": _coerce_int(_deep_get(interact, "collected_count"))
+        or _coerce_int(_deep_get(note, "collected_count")),
+        "share_count": _coerce_int(_deep_get(interact, "share_count"))
+        or _coerce_int(_deep_get(note, "share_count")),
         "thumbnail": _first_image_url(note) or "",
         "tags": _normalize_tags(note),
         "categories": [note_type] if note_type else [],
@@ -276,6 +305,8 @@ def _image_url_from_item(item: dict[str, Any]) -> str:
 
 def _first_image_url(note: dict[str, Any]) -> str:
     images = _deep_get(note, "image_list", default=[]) or []
+    if isinstance(images, str):
+        return images.split(",")[0].strip()
     for item in images:
         if isinstance(item, dict) and (url := _image_url_from_item(item)):
             return url
@@ -284,7 +315,10 @@ def _first_image_url(note: dict[str, Any]) -> str:
 
 def _image_urls(note: dict[str, Any]) -> list[str]:
     urls: list[str] = []
-    for item in _deep_get(note, "image_list", default=[]) or []:
+    image_list = _deep_get(note, "image_list", default=[]) or []
+    if isinstance(image_list, str):
+        return [item.strip() for item in image_list.split(",") if item.strip()]
+    for item in image_list:
         if not isinstance(item, dict):
             continue
         url = _image_url_from_item(item)
@@ -305,6 +339,9 @@ def _stream_url(item: dict[str, Any]) -> str:
 
 def _video_urls(note: dict[str, Any]) -> list[str]:
     urls: list[str] = []
+    video_url = _deep_get(note, "video_url")
+    if video_url:
+        urls.append(str(video_url))
     origin_key = _deep_get(note, "video.consumer.origin_video_key")
     if origin_key:
         urls.append(f"https://sns-video-bd.xhscdn.com/{origin_key}")
@@ -440,43 +477,24 @@ def _download_media_files(
     return working_video, downloaded, warnings
 
 
-def _build_sign_function(sign_url: str | None) -> Callable[..., dict[str, str]] | None:
-    if not sign_url:
-        return None
-    if sign_url.lower() in {"local", "builtin", "internal"}:
-        return lambda uri, data=None, a1="", web_session="": sign_request(
-            uri,
-            data if isinstance(data, dict) else None,
-            a1=a1 or "",
-            web_session=web_session or "",
-        )
-
-    def sign(uri: str, data: dict[str, Any] | None = None, a1: str = "", web_session: str = ""):
-        with httpx.Client(timeout=20) as client:
-            response = client.post(
-                sign_url,
-                json={"uri": uri, "data": data, "a1": a1, "web_session": web_session},
-            )
-            response.raise_for_status()
-            payload = response.json()
-        return {
-            key: str(payload[key])
-            for key in ("x-s", "x-t", "x-s-common")
-            if key in payload and payload[key]
-        }
-
-    return sign
-
-
 def _normalize_comment(raw: dict[str, Any], *, source_label: str = "xhs") -> dict[str, Any]:
     user = _deep_get(raw, "user_info", default={}) or {}
     text = _deep_get(raw, "content", "text", default="") or ""
     like_count = _coerce_int(_deep_get(raw, "like_count", "liked_count")) or 0
+    parent_id = _deep_get(raw, "target_comment.id", "parent_comment_id")
+    if parent_id in {None, "", 0, "0"}:
+        parent_id = None
+    author_name = _deep_get(user, "nickname", "nick_name", default="") or _deep_get(
+        raw,
+        "nickname",
+        default="",
+    )
+    author_id = _deep_get(user, "user_id", default="") or _deep_get(raw, "user_id", default="")
     return {
         "id": str(_deep_get(raw, "id", "comment_id", default="") or ""),
-        "parent_id": None,
-        "author_name": _deep_get(user, "nickname", "nick_name", default="") or "",
-        "author_id": str(_deep_get(user, "user_id", default="") or ""),
+        "parent_id": str(parent_id) if parent_id is not None else None,
+        "author_name": author_name or "",
+        "author_id": str(author_id or ""),
         "text": text,
         "like_count": like_count,
         "reply_count": _coerce_int(_deep_get(raw, "sub_comment_count")) or 0,
@@ -512,69 +530,107 @@ def _comment_stats(items: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _fetch_comments_payload(
+def _mediacrawler_path() -> Path:
+    return Path(os.environ.get("XHS_MEDIACRAWLER_PATH", r"D:\W\Codex\external\MediaCrawler"))
+
+
+def _mediacrawler_raw_dir(output_dir: Path) -> Path:
+    return (output_dir / "raw" / "xiaohongshu" / "mediacrawler").resolve()
+
+
+def _mediacrawler_jsonl_files(raw_dir: Path, item_type: str) -> list[Path]:
+    return sorted(
+        (raw_dir / "xhs" / "jsonl").glob(f"detail_{item_type}_*.jsonl"),
+        key=lambda item: item.stat().st_mtime,
+        reverse=True,
+    )
+
+
+def _load_mediacrawler_jsonl_items(raw_dir: Path, item_type: str) -> list[dict[str, Any]]:
+    files = _mediacrawler_jsonl_files(raw_dir, item_type)
+    if not files:
+        return []
+    items: list[dict[str, Any]] = []
+    for line in files[0].read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        payload = json.loads(line)
+        if isinstance(payload, dict):
+            items.append(payload)
+    return items
+
+
+def _run_mediacrawler_detail(
     *,
-    source: SourceInfo,
-    cookie_string: str,
-    sign_url: str | None,
+    note_url: str,
+    output_dir: Path,
+    max_comments: int,
+) -> Path:
+    mediacrawler_path = _mediacrawler_path()
+    main_path = mediacrawler_path / "main.py"
+    if not main_path.exists():
+        raise RuntimeError(f"MediaCrawler main.py was not found: {main_path}")
+
+    raw_dir = _mediacrawler_raw_dir(output_dir)
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    comments_requested = max_comments > 0
+    if _mediacrawler_jsonl_files(raw_dir, "contents") and (
+        not comments_requested or _mediacrawler_jsonl_files(raw_dir, "comments")
+    ):
+        return raw_dir
+
+    default_uv = Path.home() / "AppData" / "Roaming" / "Python" / "Python312" / "Scripts" / "uv.exe"
+    uv_exe = os.environ.get("UV_EXE") or (str(default_uv) if default_uv.exists() else "uv")
+    runner_path = Path(__file__).resolve().parents[2] / "tools" / "mediacrawler_xhs_detail.py"
+    completed = run_command(
+        [
+            uv_exe,
+            "run",
+            "python",
+            str(runner_path),
+            raw_dir,
+            note_url,
+            str(max_comments),
+        ],
+        cwd=mediacrawler_path,
+        timeout_seconds=180,
+    )
+    run_path = raw_dir / "mediacrawler.run.json"
+    run_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "0.1.0",
+                "runner": str(runner_path),
+                "mediacrawler_path": str(mediacrawler_path),
+                "note_url": note_url,
+                "max_comments": max_comments,
+                "stdout_tail": completed.stdout[-4000:],
+                "stderr_tail": completed.stderr[-4000:],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return raw_dir
+
+
+def _fetch_mediacrawler_note_payload(
+    *,
+    note_url: str,
+    output_dir: Path,
     max_comments: int,
 ) -> dict[str, Any]:
-    if max_comments <= 0:
-        return {
-            "source": {
-                "platform": source.platform,
-                "source_id": source.source_id,
-                "url": source.source_url,
-            },
-            "fetched_at": _utc_now(),
-            "count_fetched": 0,
-            "total_reported": None,
-            "selection": {
-                "sort": "like_count_desc",
-                "limit": max_comments,
-                "candidate_source": "xhs_get_note_comments",
-            },
-            "items": [],
-            "stats": _comment_stats([]),
-        }
-    if not cookie_string:
-        raise RuntimeError("Xiaohongshu comments require logged-in cookies.")
-    sign = _build_sign_function(sign_url)
-    if sign is None:
-        raise RuntimeError("Xiaohongshu comments require --xhs-sign-url or XHS_SIGN_URL.")
-    client = XhsClient(cookie=cookie_string or None, user_agent=XHS_USER_AGENT, sign=sign)
-    comments: list[dict[str, Any]] = []
-    cursor = ""
-    while len(comments) < max_comments:
-        payload = client.get_note_comments(source.source_id, cursor=cursor)
-        raw_items = payload.get("comments") or []
-        comments.extend(
-            _normalize_comment(_snake_case_json(item))
-            for item in raw_items
-            if isinstance(item, dict)
-        )
-        has_more = bool(payload.get("has_more"))
-        cursor = str(payload.get("cursor") or "")
-        if not has_more or not cursor or not raw_items:
-            break
-    items = sorted(comments, key=lambda item: item["like_count"], reverse=True)[:max_comments]
-    return {
-        "source": {
-            "platform": source.platform,
-            "source_id": source.source_id,
-            "url": source.source_url,
-        },
-        "fetched_at": _utc_now(),
-        "count_fetched": len(items),
-        "total_reported": None,
-        "selection": {
-            "sort": "like_count_desc",
-            "limit": max_comments,
-            "candidate_source": "xhs_get_note_comments",
-        },
-        "items": items,
-        "stats": _comment_stats(items),
-    }
+    raw_dir = _run_mediacrawler_detail(
+        note_url=note_url,
+        output_dir=output_dir,
+        max_comments=max_comments,
+    )
+    items = _load_mediacrawler_jsonl_items(raw_dir, "contents")
+    if not items:
+        raise RuntimeError("MediaCrawler did not write detail_contents jsonl output.")
+    return _snake_case_json(items[0])
 
 
 def _fetch_mediacrawler_comments_payload(
@@ -596,53 +652,32 @@ def _fetch_mediacrawler_comments_payload(
             "selection": {
                 "sort": "like_count_desc",
                 "limit": max_comments,
-                "candidate_source": "mediacrawler_xhshow_comment_page",
+                "candidate_source": "mediacrawler_detail_jsonl",
             },
             "items": [],
             "stats": _comment_stats([]),
         }
 
-    mediacrawler_path = Path(
-        os.environ.get("XHS_MEDIACRAWLER_PATH", r"D:\W\Codex\external\MediaCrawler")
-    )
-    script_path = mediacrawler_path / "local_xhs_api_smoke.py"
-    if not script_path.exists():
-        raise RuntimeError(f"MediaCrawler API smoke script was not found: {script_path}")
-
-    raw_dir = output_dir / "raw" / "xiaohongshu" / "mediacrawler"
-    raw_dir.mkdir(parents=True, exist_ok=True)
     note_url = source.resolved_url or source.source_url
-    default_uv = Path.home() / "AppData" / "Roaming" / "Python" / "Python312" / "Scripts" / "uv.exe"
-    uv_exe = os.environ.get("UV_EXE") or (str(default_uv) if default_uv.exists() else "uv")
-    completed = run_command(
-        [uv_exe, "run", "python", script_path.name, raw_dir, note_url],
-        cwd=mediacrawler_path,
-        timeout_seconds=160,
+    raw_dir = _run_mediacrawler_detail(
+        note_url=note_url,
+        output_dir=output_dir,
+        max_comments=max_comments,
     )
-    status_path = raw_dir / "status.json"
-    comments_path = raw_dir / "comments.raw.json"
-    status = json.loads(status_path.read_text(encoding="utf-8")) if status_path.exists() else {}
-    if not comments_path.exists():
-        steps = [step for step in status.get("steps", []) if isinstance(step, dict)]
-        comments_step = next((step for step in steps if step.get("name") == "comments"), {})
-        selfinfo_step = next((step for step in steps if step.get("name") == "selfinfo"), {})
-        parse_step = next((step for step in steps if step.get("name") == "parse_note_url"), {})
+    comments_files = _mediacrawler_jsonl_files(raw_dir, "comments")
+    if not comments_files:
         raise RuntimeError(
-            "MediaCrawler did not write comments.raw.json. "
-            f"comments_error={comments_step.get('error')!r}; "
-            f"selfinfo_ok={selfinfo_step.get('ok')!r}; "
-            f"note_id={parse_step.get('note_id')!r}; "
-            f"stderr_tail={completed.stderr[-500:]!r}"
+            "MediaCrawler did not write detail_comments jsonl output. "
+            "See raw/xiaohongshu/mediacrawler/mediacrawler.run.json for process output."
         )
-    raw_comments = json.loads(comments_path.read_text(encoding="utf-8"))
-    if not isinstance(raw_comments, list):
-        raise RuntimeError("MediaCrawler comments.raw.json was not a list.")
+    comments_path = comments_files[0]
+    raw_comments = _load_mediacrawler_jsonl_items(raw_dir, "comments")
     comments = [
-        _normalize_comment(_snake_case_json(item), source_label="mediacrawler_xhshow")
+        _normalize_comment(_snake_case_json(item), source_label="mediacrawler")
         for item in raw_comments
-        if isinstance(item, dict)
     ]
     items = sorted(comments, key=lambda item: item["like_count"], reverse=True)[:max_comments]
+    rel_comments_path = comments_path.relative_to(raw_dir).as_posix()
     return {
         "source": {
             "platform": source.platform,
@@ -655,14 +690,9 @@ def _fetch_mediacrawler_comments_payload(
         "selection": {
             "sort": "like_count_desc",
             "limit": max_comments,
-            "candidate_source": "mediacrawler_xhshow_comment_page",
-            "raw_status_path": "raw/xiaohongshu/mediacrawler/status.json",
-            "raw_comments_path": "raw/xiaohongshu/mediacrawler/comments.raw.json",
-            "selfinfo_ok": any(
-                step.get("name") == "selfinfo" and step.get("ok")
-                for step in status.get("steps", [])
-                if isinstance(step, dict)
-            ),
+            "candidate_source": "mediacrawler_detail_jsonl",
+            "raw_run_path": "raw/xiaohongshu/mediacrawler/mediacrawler.run.json",
+            "raw_comments_path": f"raw/xiaohongshu/mediacrawler/{rel_comments_path}",
         },
         "items": items,
         "stats": _comment_stats(items),
@@ -801,36 +831,32 @@ def _diagnose_xhs_comment_failure(
     details: dict[str, Any] = {"exception": type(error).__name__}
     code = "COMMENTS_UNAVAILABLE"
     message = str(error)
+    lower = message.lower()
+    xhs_code_match = re.search(r"(?:-100|300011|300031)", message)
+    if xhs_code_match:
+        details["xhs_code"] = int(xhs_code_match.group(0))
 
-    if isinstance(error, NeedVerifyError):
-        code = "PERMISSION_REQUIRED"
-        message = "Xiaohongshu required interactive verification before comments could be fetched."
-        details.update(
-            {
-                "verify_type": error.verify_type,
-                "verify_uuid": error.verify_uuid,
-            }
-        )
-    elif "logged-in cookies" in str(error):
+    if (
+        "selfinfo_ok=false" in lower
+        or "login" in lower
+        or "登录" in message
+        or "-100" in message
+    ):
         code = "COOKIE_REQUIRED"
-        message = "Xiaohongshu signed comment API requires explicit logged-in cookies."
-    elif "sign-url" in str(error) or "XHS_SIGN_URL" in str(error):
-        code = "COMMENTS_UNAVAILABLE"
         message = (
-            "Xiaohongshu signed comment API was skipped because no explicit "
-            "signer was configured."
+            "MediaCrawler could not fetch Xiaohongshu comments because login state "
+            "is missing or expired."
         )
-    elif isinstance(error, DataFetchError) and error.args and isinstance(error.args[0], dict):
-        payload = error.args[0]
-        xhs_code = payload.get("code")
-        xhs_message = str(payload.get("msg") or error)
-        details.update({"xhs_code": xhs_code, "xhs_message": xhs_message})
-        message = f"Xiaohongshu comment API failed: {xhs_message}"
-        if xhs_code == -100:
-            code = "COOKIE_REQUIRED"
-            message = "Xiaohongshu comment API reported that the login session has expired."
-        elif xhs_code in {300011, 300031}:
-            code = "PERMISSION_REQUIRED"
+    elif (
+        "captcha" in lower
+        or "verify" in lower
+        or "300011" in message
+        or "300031" in message
+        or "验证" in message
+        or "账号存在异常" in message
+    ):
+        code = "PERMISSION_REQUIRED"
+        message = "Xiaohongshu required interactive verification or reported account/session risk."
 
     diagnostics.add(
         code=code,
@@ -852,13 +878,11 @@ def analyze_xiaohongshu(
     max_screenshots: int = 0,
     force_transcription: bool = False,
     cookies: Path | None = None,
-    xhs_sign_url: str | None = None,
 ) -> dict[str, Any]:
     diagnostics = DiagnosticLog()
     artifacts = BundleArtifacts()
     capabilities = Capabilities(has_danmaku=False)
     cookie_string = _load_cookie_string(cookies)
-    xhs_sign_url = xhs_sign_url or os.environ.get("XHS_SIGN_URL")
     if cookies and not cookie_string:
         diagnostics.add(
             code="COOKIE_REQUIRED",
@@ -878,7 +902,7 @@ def analyze_xiaohongshu(
                 severity="warning",
                 stage="authentication",
                 message=(
-                    "Xiaohongshu cookies are present, but xhs signed APIs usually require "
+                    "Xiaohongshu cookies are present, but some provider requests usually require "
                     "a1, web_session, and webId."
                 ),
                 details={"cookie_fields": fields},
@@ -891,10 +915,38 @@ def analyze_xiaohongshu(
     working_video: Path | None = None
 
     try:
-        resolved_url, note_id, html, note, extractor = _fetch_note_data(
-            source_url=source_url,
-            cookie_string=cookie_string,
-        )
+        try:
+            resolved_url, note_id, html, note, extractor = _fetch_note_data(
+                source_url=source_url,
+                cookie_string=cookie_string,
+            )
+        except Exception as html_error:  # noqa: BLE001
+            resolved_url = _resolve_source_url(source_url, cookie_string)
+            note_id = _extract_note_id_from_url(resolved_url)
+            fallback_source = SourceInfo(
+                platform="xiaohongshu",
+                source_url=source_url,
+                resolved_url=resolved_url,
+                source_id=note_id,
+            )
+            note = _fetch_mediacrawler_note_payload(
+                note_url=resolved_url,
+                output_dir=output_dir,
+                max_comments=max_comments if fetch_comments else 0,
+            )
+            html = ""
+            extractor = "mediacrawler_detail_jsonl"
+            source = fallback_source
+            diagnostics.add(
+                code="METADATA_HTML_UNAVAILABLE",
+                severity="warning",
+                stage="metadata",
+                message=(
+                    "Xiaohongshu note HTML did not expose note data; "
+                    "MediaCrawler detail output was used."
+                ),
+                details={"html_error": repr(html_error)},
+            )
         source = SourceInfo(
             platform="xiaohongshu",
             source_url=source_url,
@@ -970,39 +1022,14 @@ def analyze_xiaohongshu(
             artifacts.add("comments_path", "comments", "comments.json")
             capabilities.has_comments = bool(comments_payload["items"])
         except Exception as error:  # noqa: BLE001
-            try:
-                comments_payload = _fetch_comments_payload(
-                    source=source,
-                    cookie_string=cookie_string,
-                    sign_url=xhs_sign_url,
-                    max_comments=max_comments,
-                )
-                write_json(output_dir / "comments.json", comments_payload)
-                artifacts.add("comments_path", "comments", "comments.json")
-                capabilities.has_comments = bool(comments_payload["items"])
-                diagnostics.add(
-                    code="COMMENTS_FALLBACK_USED",
-                    severity="warning",
-                    stage="comments",
-                    message=(
-                        "MediaCrawler comment collection failed, but the explicit "
-                        "Xiaohongshu signed API fallback produced bounded comments."
-                    ),
-                    details={
-                        "primary_error": repr(error),
-                        "fallback": "xhs_get_note_comments",
-                        "count_fetched": comments_payload["count_fetched"],
-                    },
-                )
-            except Exception as fallback_error:  # noqa: BLE001
-                diagnostics.add(
-                    code="COMMENTS_UNAVAILABLE",
-                    severity="warning",
-                    stage="comments",
-                    message="MediaCrawler did not produce Xiaohongshu comments.",
-                    details={"error": repr(error)},
-                )
-                _diagnose_xhs_comment_failure(diagnostics, fallback_error)
+            diagnostics.add(
+                code="COMMENTS_UNAVAILABLE",
+                severity="warning",
+                stage="comments",
+                message="MediaCrawler did not produce Xiaohongshu comments.",
+                details={"error": repr(error)},
+            )
+            _diagnose_xhs_comment_failure(diagnostics, error)
 
     if working_video is not None and (force_transcription or not transcript_segments):
         try:
@@ -1120,7 +1147,6 @@ def analyze_xiaohongshu(
             "max_screenshots": max_screenshots,
             "force_transcription": force_transcription,
             "cookies": str(cookies) if cookies else None,
-            "xhs_sign_url": xhs_sign_url,
             "no_llm": True,
         },
     )

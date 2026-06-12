@@ -3,8 +3,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from xhs.exception import DataFetchError
-
 from video_bundle_agent.bundle.schema import SourceInfo
 from video_bundle_agent.diagnostics.models import DiagnosticLog
 from video_bundle_agent.providers.xiaohongshu.provider import (
@@ -28,6 +26,13 @@ def test_extract_xiaohongshu_note_id_from_supported_urls() -> None:
     assert (
         _extract_note_id_from_url("https://www.xiaohongshu.com/user/profile/user123/ghi789")
         == "ghi789"
+    )
+    assert (
+        _extract_note_id_from_url(
+            "https://www.xiaohongshu.com/login?redirectPath="
+            "https%3A%2F%2Fwww.xiaohongshu.com%2Fdiscovery%2Fitem%2Fabc789%3Fxsec_token%3Dtok"
+        )
+        == "abc789"
     )
 
 
@@ -251,12 +256,10 @@ def test_analyze_xiaohongshu_records_comment_cookie_requirement(
     )
     monkeypatch.setattr(
         "video_bundle_agent.providers.xiaohongshu.provider._fetch_mediacrawler_comments_payload",
-        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("MediaCrawler unavailable")),
-    )
-    monkeypatch.setattr(
-        "video_bundle_agent.providers.xiaohongshu.provider._fetch_comments_payload",
         lambda **kwargs: (_ for _ in ()).throw(
-            RuntimeError("Xiaohongshu comments require logged-in cookies.")
+            RuntimeError(
+                "MediaCrawler did not write detail_comments jsonl output. selfinfo_ok=False"
+            )
         ),
     )
 
@@ -281,40 +284,38 @@ def test_fetch_mediacrawler_comments_payload_normalizes_raw_comments(
 ) -> None:
     mediacrawler_dir = tmp_path / "MediaCrawler"
     mediacrawler_dir.mkdir()
-    (mediacrawler_dir / "local_xhs_api_smoke.py").write_text("# smoke\n", encoding="utf-8")
+    (mediacrawler_dir / "main.py").write_text("# main\n", encoding="utf-8")
     monkeypatch.setenv("XHS_MEDIACRAWLER_PATH", str(mediacrawler_dir))
+    monkeypatch.chdir(tmp_path)
 
     def fake_run_command(args: list[Any], **kwargs: Any) -> SimpleNamespace:
         raw_dir = Path(args[4])
-        raw_dir.mkdir(parents=True, exist_ok=True)
-        (raw_dir / "status.json").write_text(
-            json.dumps(
-                {
-                    "steps": [
-                        {"name": "selfinfo", "ok": False},
-                        {"name": "comments", "ok": True, "count": 2},
-                    ]
-                }
-            ),
-            encoding="utf-8",
-        )
-        (raw_dir / "comments.raw.json").write_text(
-            json.dumps(
+        assert raw_dir.is_absolute()
+        comments_dir = raw_dir / "xhs" / "jsonl"
+        comments_dir.mkdir(parents=True, exist_ok=True)
+        (comments_dir / "detail_comments_2026-06-11.jsonl").write_text(
+            "\n".join(
                 [
-                    {
-                        "id": "c-low",
-                        "content": "low",
-                        "like_count": "1",
-                        "create_time": 1_700_000_000_000,
-                        "user_info": {"nickname": "Low", "user_id": "u-low"},
-                    },
-                    {
-                        "id": "c-high",
-                        "content": "high",
-                        "like_count": "9",
-                        "create_time": 1_700_000_010_000,
-                        "user_info": {"nickname": "High", "user_id": "u-high"},
-                    },
+                    json.dumps(
+                        {
+                            "comment_id": "c-low",
+                            "content": "low",
+                            "like_count": "1",
+                            "create_time": 1_700_000_000_000,
+                            "nickname": "Low",
+                            "user_id": "u-low",
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "comment_id": "c-high",
+                            "content": "high",
+                            "like_count": "9",
+                            "create_time": 1_700_000_010_000,
+                            "nickname": "High",
+                            "user_id": "u-high",
+                        }
+                    ),
                 ]
             ),
             encoding="utf-8",
@@ -333,28 +334,21 @@ def test_fetch_mediacrawler_comments_payload_normalizes_raw_comments(
             resolved_url="https://www.xiaohongshu.com/explore/abc123?xsec_token=tok",
             source_id="abc123",
         ),
-        output_dir=tmp_path,
+        output_dir=Path("relative-bundle"),
         max_comments=1,
     )
 
     assert payload["count_fetched"] == 1
     assert payload["items"][0]["id"] == "c-high"
-    assert payload["items"][0]["source"] == "mediacrawler_xhshow"
-    assert payload["selection"]["candidate_source"] == "mediacrawler_xhshow_comment_page"
+    assert payload["items"][0]["source"] == "mediacrawler"
+    assert payload["selection"]["candidate_source"] == "mediacrawler_detail_jsonl"
 
 
 def test_xiaohongshu_comment_account_abnormal_is_permission_required() -> None:
     diagnostics = DiagnosticLog()
     _diagnose_xhs_comment_failure(
         diagnostics,
-        DataFetchError(
-            {
-                "code": 300011,
-                "success": False,
-                "msg": "当前账号存在异常，请切换账号后重试",
-                "data": {},
-            }
-        ),
+        RuntimeError("MediaCrawler failed: 300011 当前账号存在异常，请切换账号后重试"),
     )
 
     payload = diagnostics.model_dump(mode="json")

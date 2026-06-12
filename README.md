@@ -108,10 +108,10 @@ If Chrome's default profile cannot expose a DevTools endpoint, use the logged-in
   -UseDefaultChromeProfile
 ```
 
-Xiaohongshu basic provider uses explicit cookies, HTML note extraction, media download, local
-transcription for video notes, and visual recall. `XHS-Downloader` is installed externally under
-`D:\Workshop\XHS-Downloader` as a reference/tool; the main project uses a lightweight adapter and does
-not vendor that framework.
+Xiaohongshu basic provider uses explicit cookies when supplied, HTML note extraction, media download,
+local transcription for video notes, and visual recall. Comments are collected through the managed
+MediaCrawler checkout under `D:\W\Codex\external\MediaCrawler` using its official detail/jsonl workflow.
+`XHS-Downloader` remains an external reference/tool under `D:\Workshop\XHS-Downloader`.
 
 ```powershell
 .\scripts\refresh-xiaohongshu-cookies.ps1
@@ -122,29 +122,16 @@ uv run video-bundle-agent analyze "https://www.xiaohongshu.com/explore/<note-id>
   --max-comments 100 `
   --visual-recall high `
   --visual-strategy all `
-  --cookies "$env:APPDATA\video-bundle-agent\xiaohongshu.cookies.txt" `
   --no-llm
 ```
 
-Xiaohongshu metadata and media can often be collected from the note HTML. Comment APIs require signing;
-the provider now uses a bundled local signer by default. Comment APIs still require logged-in Xiaohongshu
-cookies, so refresh and pass the cookies file when comments are requested. For URL-based compatibility,
-you can also run the local signer service and pass its endpoint:
-
-```powershell
-uv run video-bundle-agent xhs-signer --host 127.0.0.1 --port 8787
-
-uv run video-bundle-agent analyze "https://www.xiaohongshu.com/explore/<note-id>" `
-  --out outputs/xiaohongshu-smoke `
-  --comments `
-  --max-comments 100 `
-  --cookies "$env:APPDATA\video-bundle-agent\xiaohongshu.cookies.txt" `
-  --xhs-sign-url "http://127.0.0.1:8787/sign" `
-  --no-llm
-```
-
-Without valid cookies or if signing fails, the provider writes diagnostics and continues with
-metadata/media/transcription.
+Xiaohongshu metadata and media can often be collected from the note HTML. Comment collection is
+MediaCrawler-only: the first run may require QR/SMS verification in the browser that MediaCrawler opens,
+then MediaCrawler reuses its saved `browser_data/cdp_xhs_user_data_dir` login state. If the login state
+expires or Xiaohongshu triggers platform verification, the provider writes `COOKIE_REQUIRED` or
+`PERMISSION_REQUIRED` diagnostics and continues with metadata/media/transcription.
+Add `--cookies "$env:APPDATA\video-bundle-agent\xiaohongshu.cookies.txt"` only when the note HTML/media
+request needs an exported Xiaohongshu cookie file.
 
 Skill-led report runs can split text collection from screenshot extraction so Codex can classify the video first:
 

@@ -107,10 +107,10 @@ Each bundle should contain:
   comments, optional danmaku, API playurl media download, retained working video/audio, transcription
   fallback, screenshots, and diagnostics; `yt-dlp` remains fallback only when API metadata or media fails.
 - Xiaohongshu basic provider: URL/short-link resolution, explicit cookies, HTML note extraction,
-  media URL normalization/download, video transcription, visual recall, and MediaCrawler-first bounded
-  top-level comments. The bundled local signer is explicit fallback/debug only. Observed
-  account/session risk responses such as `300011` are recorded as `PERMISSION_REQUIRED`; comments remain
-  optional evidence and must not block the main content bundle.
+  media URL normalization/download, video transcription, visual recall, and MediaCrawler-only bounded
+  top-level comments through MediaCrawler's official `xhs detail` jsonl workflow. Observed account/session
+  risk responses such as `300011` are recorded as `PERMISSION_REQUIRED`; comments remain optional evidence
+  and must not block the main content bundle.
 - Local video provider skeleton.
 
 ## Implementation Order
@@ -128,12 +128,10 @@ Each bundle should contain:
    This step runs after `content_profile.json` and `slides.json`; it does not replace full transcript reading.
 5. Update YouTube smoke acceptance so transcript/transcription and slides are both required before report writing.
 6. Validate Bilibili API-first online smoke and refine cookie/credential handling if public API access is insufficient.
-7. Validate Xiaohongshu online smoke with MediaCrawler-first bounded comments. If comment APIs return
-   platform risk-control responses, keep bundle creation moving and record diagnostics. Keep explicit
-   signer tests only as fallback/debug coverage.
-8. Keep MediaCrawler as an external bounded provider/reference for Xiaohongshu comments. Defer full
-   MediaCrawler crawler workflows, search, author-homepage traversal, and nested feedback until the adapter
-   boundary is clear.
+7. Validate Xiaohongshu online smoke with MediaCrawler-only bounded comments. If comment APIs return
+   platform risk-control responses, keep bundle creation moving and record diagnostics.
+8. Keep MediaCrawler as a managed external runtime for Xiaohongshu comments. Defer search,
+   author-homepage traversal, and nested feedback until the adapter boundary is clear.
 
 ## Visual Recall Module
 

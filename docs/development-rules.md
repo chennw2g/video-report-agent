@@ -2,6 +2,19 @@
 
 These rules keep `video-bundle-agent` focused on producing reliable, inspectable source bundles.
 
+## Status Snapshot Discipline
+
+- Treat `docs/current-status.md` as the context-compaction handoff file.
+- After every material project change, update `docs/current-status.md` before final reporting or committing
+  when the change affects capabilities, provider state, report contracts, validation status, known blockers,
+  external tool state, or recommended next steps.
+- Material changes include provider behavior, report structure, visual rules, skill workflow, CLI commands,
+  dependency/tool status, smoke-test results, Git baseline changes, and any paused/resumed platform workflow.
+- If a change is purely mechanical and does not affect the status snapshot, explicitly say so in the final
+  response instead of silently skipping the file.
+- Before creating a commit, check whether `docs/current-status.md` needs an update alongside the changed code,
+  docs, tests, and skills.
+
 ## Product Boundary
 
 - The user-facing target is a Codex plugin-shaped workflow: link or local file in, prepared bundle evidence,
@@ -33,9 +46,9 @@ These rules keep `video-bundle-agent` focused on producing reliable, inspectable
   metadata, bounded top-liked comments, optional danmaku, and API playurl media download; `yt-dlp`
   is fallback only when API metadata or media fails.
 - Xiaohongshu uses a lightweight provider boundary first: explicit cookies, HTML note extraction,
-  media URL normalization/download, local video transcription, visual recall, and MediaCrawler-first bounded
-  top-level comments. The local signer is retained only as an explicit fallback/debug path, not as the default
-  comment collector. MediaCrawler remains an external tool, not a vendored crawler framework.
+  media URL normalization/download, local video transcription, visual recall, and MediaCrawler-only bounded
+  top-level comments. MediaCrawler is a managed external runtime for Xiaohongshu comments, not a vendored
+  Python package inside `src/`.
 - Local video may remain a skeleton until ffprobe, transcription, OCR, and frame extraction are deliberately scoped.
 - The phase-1 skill may be minimal, but its intended workflow is to call the bundle engine from a user-supplied link or file and then produce a report from the bundle.
 
@@ -54,10 +67,12 @@ These rules keep `video-bundle-agent` focused on producing reliable, inspectable
 - The stable YouTube cookies file path is `%APPDATA%\video-bundle-agent\youtube.cookies.txt`.
 - The stable Bilibili cookies file path is `%APPDATA%\video-bundle-agent\bilibili.cookies.txt`.
 - The stable Xiaohongshu cookies file path is `%APPDATA%\video-bundle-agent\xiaohongshu.cookies.txt`.
-- The stable Xiaohongshu CDP Chrome profile is `%APPDATA%\video-bundle-agent\chrome-xiaohongshu-profile`.
-- Start or reuse it with `scripts/start-xiaohongshu-cdp-chrome.ps1`; default CDP port is `9231`.
-- Prefer the dedicated CDP Chrome profile over repeated cookie export because mobile relogin or platform
-  verification may invalidate the desktop web session.
+- Xiaohongshu comments use MediaCrawler's own saved browser profile under its checkout
+  (`browser_data/cdp_xhs_user_data_dir`). Do not require the user to manually start the old dedicated
+  `9231` CDP browser path for normal runs.
+- MediaCrawler official `xhs detail` runs should be bounded. The current provider timeout is 180 seconds;
+  if a run waits longer than that, treat it as login, verification, or platform blocking instead of leaving
+  the user waiting for a long silent browser session.
 - Bilibili authenticated pagination should use an explicit Bilibili Netscape cookies file with
   `--cookies`; `--cookies-from-browser` is only a yt-dlp fallback input and does not authenticate
   `bilibili-api-python`.
@@ -67,18 +82,26 @@ These rules keep `video-bundle-agent` focused on producing reliable, inspectable
 - Do not bypass captchas, paywalls, DRM, platform account restrictions, or rate-limit controls.
 - Do not implement bulk crawling or account-rotation workflows in phase 1.
 
+## External Tool Invocation
+
+- When invoking an external project or tool with a different working directory, pass project output
+  directories as resolved absolute paths.
+- Do not pass repo-relative output paths to external checkouts such as MediaCrawler, because they will be
+  resolved relative to the external tool's `cwd` and can silently write files outside the bundle directory.
+- Bundle indexes may still store normalized relative paths for user-facing artifacts; the absolute-path rule
+  applies to subprocess invocation boundaries.
+
 ## Audience Feedback Rules
 
 - Default comment collection is top 100 by `like_count` descending for every platform that supports
   comment like counts.
 - Do not default to all comments, all replies, or full historical audience feedback.
 - Bilibili comments, Xiaohongshu comments, and nested replies must have explicit limits before implementation.
-- Xiaohongshu comments use the local MediaCrawler checkout by default when available. It must use bounded
-  top-level collection, an existing CDP Chrome session, and raw output under `raw/xiaohongshu/mediacrawler/`.
-- The bundled local signer or an external signing service may be used only when explicitly requested with
-  `--xhs-sign-url local`, `--xhs-sign-url <url>`, or `XHS_SIGN_URL`. If this explicit fallback is used,
-  it still requires valid cookies; without cookies or with signing failure, write diagnostics and keep
-  metadata/media/transcription work moving.
+- Xiaohongshu comments use the local MediaCrawler checkout as the only supported collection path. It must
+  call MediaCrawler's official `xhs detail` workflow, request bounded top-level comments, save `jsonl`
+  output under `raw/xiaohongshu/mediacrawler/`, and normalize comments by `like_count`.
+- Do not reintroduce the old bundled local signer, external signing service, `xhs-signer`, `--xhs-sign-url`,
+  or `XHS_SIGN_URL` flow unless a new ADR explicitly replaces the MediaCrawler-only decision.
 - Xiaohongshu account/session risk and interactive verification responses, including observed `300011`
   responses, are `PERMISSION_REQUIRED` diagnostics. They are not blockers for metadata, media,
   transcription, screenshots, or the main content report.
@@ -203,6 +226,9 @@ These rules keep `video-bundle-agent` focused on producing reliable, inspectable
   create a standalone "key visual analysis" section unless the user explicitly asks for an image appendix.
 - `deep` should not place a screenshot in every chapter or viewpoint by default. Include an image only when
   it adds information the text alone does not convey, and avoid repeated or near-identical screenshots.
+- Talking-head, podcast, interview, and other low-visual-variation videos should not embed body screenshots
+  by default. If a frame only repeats burned-in subtitles or shows the same speaker pose, keep screenshots as
+  bundle evidence and use at most a representative hero frame; do not use them as report filler.
 - Both `quick` and `deep` should avoid reusing the same screenshot in overview and later core/chapter
   sections. Keep a screenshot at the point where it most directly clarifies the text.
 - For tutorial, course, software-demo, or process-heavy videos, `deep` should reconstruct the source into

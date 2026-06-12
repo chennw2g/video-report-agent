@@ -77,6 +77,9 @@ Image rules:
 - A cover/thumbnail may be used as the main visual in the overview.
 - Do not create a standalone key-image gallery. Put screenshots next to the text they clarify.
 - Do not use screenshots as decoration or filler.
+- For talking-head, podcast, interview, or other low-visual-variation videos, do not embed body screenshots
+  by default. A frame that only repeats burned-in subtitles or shows the same speaker pose is not enough
+  visual value; keep at most a representative hero image unless the frame adds independent information.
 - Do not reuse the same screenshot in both the overview and a later core/chapter section. Keep it where it
   best supports the text.
 
@@ -109,6 +112,9 @@ Source-type adaptation:
 - Do not place a screenshot in every chapter or viewpoint by default. Include an image only when it adds
   information that the text alone does not convey, such as an interface state, visual comparison, prompt
   table, timeline, chart, or screen-specific operation.
+- For pure talking-head videos with little visual change, avoid inline body screenshots even in `deep`.
+  Screenshots still remain bundle evidence and may be used as the hero representative image, but they should
+  not be used as filler beside analysis paragraphs.
 - Avoid repeated or near-identical screenshots in adjacent sections. When two screenshots are genuinely
   useful in the same block, render them compactly side by side when the viewport allows it.
 - The same screenshot should not appear twice in the main report unless the user explicitly asks for an

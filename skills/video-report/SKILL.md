@@ -113,9 +113,10 @@ comment rules, label text, or content depth. Those rules belong to the content c
   status token.
 - Layout: desktop uses left navigation plus a wide main reading column. The top visual area uses a stable
   two-column hero with text/metadata on one side and a representative thumbnail/frame on the other. Keep
-  the image at its original aspect ratio, with no decorative frame or forced aspect-ratio box, and center it
-  against the text block. Do not force top/bottom equality if that creates awkward image sizing. Body modules
-  stack vertically as full-width panels.
+  normal horizontal or near-horizontal images at their original aspect ratio, with no decorative frame, and
+  center them against the text block. For portrait/vertical video frames in the hero, use a stable 3:2
+  horizontal contain box with side whitespace so the title area is not stretched by a tall vertical image.
+  Body modules stack vertically as full-width panels.
 - Typography: use readable Chinese sans-serif typography, generous line height, no viewport-scaled font
   sizes, and default letter spacing.
 - Panels/cards: use white surfaces, low-contrast borders, light shadows, and 8px-or-smaller radii. Avoid
@@ -352,6 +353,9 @@ Source-type adaptation:
 - Do not place a screenshot in every chapter or viewpoint by default. Include an image only when it adds
   information that the text alone does not convey, such as an interface state, visual comparison, prompt
   table, timeline, chart, or screen-specific operation.
+- For talking-head, podcast, interview, and other low-visual-variation videos, do not embed body screenshots
+  by default. If a frame only repeats burned-in subtitles or shows the same speaker pose, keep it as bundle
+  evidence or a hero representative image, not as filler beside analysis text.
 - Avoid repeated or near-identical screenshots in adjacent sections. When two screenshots are genuinely
   useful in the same block, render them compactly side by side when the viewport allows it.
 - Do not reuse the same screenshot in both the overview and a later core/chapter section. Keep it where it

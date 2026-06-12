@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 from importlib import metadata
 from pathlib import Path
@@ -86,6 +87,33 @@ def _check_python_module(name: str, *, required: bool = False) -> ToolCheck:
     )
 
 
+def _check_mediacrawler() -> ToolCheck:
+    path = Path(os.environ.get("XHS_MEDIACRAWLER_PATH", r"D:\W\Codex\external\MediaCrawler"))
+    main_path = path / "main.py"
+    pyproject_path = path / "pyproject.toml"
+    if not main_path.exists() or not pyproject_path.exists():
+        return ToolCheck(
+            name="mediacrawler",
+            required=False,
+            available=False,
+            status="warning",
+            path=str(path),
+            message=(
+                "MediaCrawler checkout was not found; "
+                "Xiaohongshu comments will be unavailable."
+            ),
+        )
+
+    return ToolCheck(
+        name="mediacrawler",
+        required=False,
+        available=True,
+        status="ok",
+        path=str(path),
+        message="MediaCrawler checkout is available for Xiaohongshu comments.",
+    )
+
+
 def run_doctor() -> DoctorReport:
     tools = [
         _check_python(),
@@ -98,6 +126,7 @@ def run_doctor() -> DoctorReport:
         _check_python_module("faster-whisper", required=False),
         _check_python_module("xhs", required=False),
         _check_python_module("playwright", required=False),
+        _check_mediacrawler(),
     ]
 
     chrome = _check_executable("chrome", required=False, version_args=[])

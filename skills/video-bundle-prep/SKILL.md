@@ -17,7 +17,7 @@ This skill turns a video link, local video file, or existing bundle into a reusa
 2. For fresh URL/file inputs, choose the provider workflow by platform:
    - YouTube: yt-dlp-first.
    - Bilibili: Bilibili API-first; yt-dlp is fallback only.
-   - Xiaohongshu: lightweight provider with MediaCrawler-first bounded comments when available.
+   - Xiaohongshu: lightweight metadata/media provider plus MediaCrawler-only bounded comments.
    - Local video: local media workflow.
 3. Run stage-1 collection with transcript/transcription evidence, bounded comments when requested, retained working media, no screenshots yet, and no LLM calls.
 4. Read `manifest.json`, `diagnostics.json`, `metadata.json`, and transcript/transcription evidence.
@@ -56,13 +56,12 @@ uv run video-bundle-agent analyze "<url>" `
   --no-llm
 ```
 
-For Xiaohongshu, start or reuse the dedicated CDP Chrome profile before comment collection when needed:
-
-```powershell
-scripts/start-xiaohongshu-cdp-chrome.ps1 -Port 9231
-```
-
-Then run the platform analyze command with explicit cookies when available:
+For Xiaohongshu, run the platform analyze command. Comments are collected only through the managed
+MediaCrawler checkout, using MediaCrawler's official `xhs detail` jsonl workflow and saved browser profile.
+The first run may open a browser for QR/SMS login; later runs should reuse MediaCrawler's saved profile.
+MediaCrawler detail runs are bounded by the provider timeout, currently 180 seconds; if it times out, report
+login, verification, or platform blocking diagnostics instead of waiting silently.
+Pass explicit cookies only when needed for note HTML/media access:
 
 ```powershell
 uv run video-bundle-agent analyze "<url>" `
@@ -70,9 +69,17 @@ uv run video-bundle-agent analyze "<url>" `
   --comments `
   --max-comments 100 `
   --visual-recall none `
-  --cookies "$env:APPDATA\video-bundle-agent\xiaohongshu.cookies.txt" `
   --no-llm
 ```
+
+Add this only when the note HTML/media request needs an exported Xiaohongshu cookie file:
+
+```powershell
+--cookies "$env:APPDATA\video-bundle-agent\xiaohongshu.cookies.txt"
+```
+
+Do not start the old dedicated `9231` CDP browser path for normal Xiaohongshu runs. Do not use `xhs-signer`,
+`--xhs-sign-url`, or `XHS_SIGN_URL`; that local signer path is no longer supported.
 
 After classification:
 

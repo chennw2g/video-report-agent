@@ -16,7 +16,6 @@ from video_bundle_agent.providers import detect_platform
 from video_bundle_agent.providers.bilibili.provider import analyze_bilibili
 from video_bundle_agent.providers.local_video.provider import analyze_local_video
 from video_bundle_agent.providers.xiaohongshu.provider import analyze_xiaohongshu
-from video_bundle_agent.providers.xiaohongshu.signer import serve_signer
 from video_bundle_agent.providers.youtube.provider import analyze_youtube
 
 app = typer.Typer(no_args_is_help=True, help="Create Codex-readable bundles from video sources.")
@@ -133,23 +132,6 @@ def compare_transcripts(
 
     result = compare_transcripts_for_bundle(bundle_dir, window_seconds=window_seconds)
     typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
-
-
-@app.command("xhs-signer")
-def xhs_signer(
-    host: Annotated[
-        str,
-        typer.Option("--host", help="Host for the local Xiaohongshu signer."),
-    ] = "127.0.0.1",
-    port: Annotated[
-        int,
-        typer.Option("--port", min=1, max=65535, help="Port for the local Xiaohongshu signer."),
-    ] = 8787,
-) -> None:
-    """Run a local Xiaohongshu signing service for signed read-only APIs."""
-
-    typer.echo(f"Xiaohongshu signer listening on http://{host}:{port}/sign")
-    serve_signer(host=host, port=port)
 
 
 @app.command("extract-frames")
@@ -292,16 +274,6 @@ def analyze(
             help="Explicit browser cookie source for yt-dlp, for example: chrome.",
         ),
     ] = None,
-    xhs_sign_url: Annotated[
-        str | None,
-        typer.Option(
-            "--xhs-sign-url",
-            help=(
-                "Explicit Xiaohongshu xhs signing fallback/debug URL for signed APIs. "
-                "Use 'local' for the bundled signer or set XHS_SIGN_URL."
-            ),
-        ),
-    ] = None,
     no_llm: Annotated[
         bool,
         typer.Option("--no-llm/--llm", help="Keep analysis to data collection only."),
@@ -369,7 +341,6 @@ def analyze(
             max_screenshots=max_screenshots,
             force_transcription=force_transcription,
             cookies=cookies,
-            xhs_sign_url=xhs_sign_url,
         )
     elif platform == "local_video":
         result = analyze_local_video(source, out)

@@ -172,6 +172,18 @@ h1.title-very-long { font-size: 32px; }
   border-radius: 8px;
   background: transparent;
 }
+.hero-media.hero-portrait {
+  aspect-ratio: 3 / 2;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+}
+.hero-media.hero-portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
 .hero-media .caption {
   padding: 12px 14px 14px;
   border-top: 1px solid var(--line);
@@ -611,6 +623,71 @@ def relative_asset_path(bundle_dir: Path, value: Any) -> str:
     return raw.replace("\\", "/")
 
 
+def local_asset_path(bundle_dir: Path, value: Any) -> Path | None:
+    raw = str(value or "")
+    if not raw or raw.startswith(("http://", "https://", "data:")):
+        return None
+    path = Path(raw)
+    if not path.is_absolute():
+        path = bundle_dir / path
+    return path if path.exists() else None
+
+
+def image_dimensions(path: Path) -> tuple[int, int] | None:
+    try:
+        with path.open("rb") as handle:
+            header = handle.read(32)
+            if header.startswith(b"\x89PNG\r\n\x1a\n") and len(header) >= 24:
+                width = int.from_bytes(header[16:20], "big")
+                height = int.from_bytes(header[20:24], "big")
+                return (width, height) if width and height else None
+            if header[:2] != b"\xff\xd8":
+                return None
+            handle.seek(2)
+            while True:
+                marker_start = handle.read(1)
+                if not marker_start:
+                    return None
+                if marker_start != b"\xff":
+                    continue
+                marker = handle.read(1)
+                while marker == b"\xff":
+                    marker = handle.read(1)
+                if not marker:
+                    return None
+                marker_value = marker[0]
+                if marker_value in {0xD8, 0xD9}:
+                    continue
+                length_bytes = handle.read(2)
+                if len(length_bytes) != 2:
+                    return None
+                length = int.from_bytes(length_bytes, "big")
+                if length < 2:
+                    return None
+                if 0xC0 <= marker_value <= 0xC3:
+                    data = handle.read(length - 2)
+                    if len(data) >= 5:
+                        height = int.from_bytes(data[1:3], "big")
+                        width = int.from_bytes(data[3:5], "big")
+                        return (width, height) if width and height else None
+                    return None
+                handle.seek(length - 2, os.SEEK_CUR)
+    except OSError:
+        return None
+
+
+def hero_orientation_class(bundle_dir: Path, visual: dict[str, Any]) -> str:
+    explicit = str(visual.get("orientation") or "").lower()
+    if explicit in {"portrait", "vertical"}:
+        return " hero-portrait"
+    local_path = local_asset_path(bundle_dir, visual.get("image_path"))
+    dimensions = image_dimensions(local_path) if local_path else None
+    if not dimensions:
+        return ""
+    width, height = dimensions
+    return " hero-portrait" if height / max(width, 1) > 1.2 else ""
+
+
 def paragraphs(value: Any) -> str:
     blocks: list[str] = []
     for item in ensure_list(value):
@@ -787,8 +864,9 @@ def render_hero_visual(bundle_dir: Path, visual: dict[str, Any]) -> str:
             '<div class="empty">暂无封面或代表截图</div>'
             "</div>"
         )
+    orientation_class = hero_orientation_class(bundle_dir, visual)
     return (
-        '<div class="hero-media">'
+        f'<div class="hero-media{orientation_class}">'
         f'<img src="{text(image_path)}" alt="{text(visual.get("title"))}">'
         "</div>"
     )

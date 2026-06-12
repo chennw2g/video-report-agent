@@ -151,13 +151,13 @@ Function coverage and implementation speed take priority.
 Primary references: `XHS-Downloader` + `MediaCrawler` + `ReaJason/xhs`.
 
 Current implementation stage: lightweight Xiaohongshu provider boundary with HTML initial-state note extraction,
-media URL normalization, media file download, video transcription, visual recall, and MediaCrawler-first bounded
-comment fetching. `xhs` plus the bundled local signer is retained only as an explicit fallback/debug path.
+media URL normalization, media file download, video transcription, visual recall, and MediaCrawler-only bounded
+comment fetching. The old `xhs` plus bundled local signer path has been removed from the supported workflow.
 `XHS-Downloader` is installed as an external reference/tool under
 `D:\Workshop\XHS-Downloader`, but it is not imported into the main project because the current repo does not
 build as a standard Python wheel and should not be vendored into the bundle engine. `MediaCrawler` is checked
-out under `D:\W\Codex\external\MediaCrawler` with its own uv environment and is treated as an external
-fallback/reference, not a vendored dependency.
+out under `D:\W\Codex\external\MediaCrawler` with its own uv environment and is treated as a managed external
+runtime for Xiaohongshu comments, similar to how the project wraps ffmpeg, yt-dlp, and whisper.
 
 `XHS-Downloader` responsibilities:
 
@@ -179,13 +179,16 @@ implementation.
 
 Current comment boundary:
 
-- Top-level comments use the external MediaCrawler API smoke path by default when
+- Top-level comments use MediaCrawler's official `xhs detail` workflow when
   `D:\W\Codex\external\MediaCrawler` exists, or when `XHS_MEDIACRAWLER_PATH` points to another checkout.
-  The path uses MediaCrawler's `xhshow` signing flow and an existing CDP Chrome session, writes raw debug
-  files under `raw/xiaohongshu/mediacrawler/`, and caps/sorts normalized comments by `like_count`.
-- The bundled local signer from `src/video_bundle_agent/providers/xiaohongshu/signer.py` is no longer the
-  default comment path because observed real comment calls were unstable. It remains available only when
-  `--xhs-sign-url local`, `--xhs-sign-url <url>`, or `XHS_SIGN_URL` is explicitly supplied.
+  The wrapper runs MediaCrawler in its own uv environment, sets CDP auto-launch with saved login state, writes
+  raw `jsonl` files under `raw/xiaohongshu/mediacrawler/`, and caps/sorts normalized comments by `like_count`.
+- The bundled local signer from `src/video_bundle_agent/providers/xiaohongshu/signer.py`, the `xhs-signer`
+  command, `--xhs-sign-url`, and `XHS_SIGN_URL` are removed from the supported workflow because observed real
+  comment calls were unstable.
+- 2026-06-11 retest: after exporting fresh cookies from the logged-in dedicated CDP browser, the original
+  `xhs` + builtin local signer path still returned `300011` (`当前账号存在异常，请切换账号后重试`) on
+  `SRjpwmmZKw`. Do not promote it back unless a new ADR explicitly replaces the MediaCrawler-only decision.
 - Signing and CDP browser state are not replacements for platform permission. If Xiaohongshu blocks the
   current account/session, record diagnostics and continue with core video evidence.
 - If Xiaohongshu returns interactive verification or account/session risk responses such as `300011`,
@@ -193,8 +196,12 @@ Current comment boundary:
 - If Xiaohongshu returns login-expired responses such as `-100`, comments are recorded as `COOKIE_REQUIRED`.
 - Normalized comments are sorted by `like_count` descending and capped by `--max-comments`, default 100.
 - Nested comments remain deferred until a bounded policy and extraction flow are validated.
-- MediaCrawler full crawler/login loops are not the default project workflow. Do not keep repeating QR/SMS
-  login attempts; record the platform error and continue with core video evidence.
+- MediaCrawler login is allowed only as its normal saved-profile flow. The first run may require QR/SMS
+  verification; later runs should reuse `browser_data/cdp_xhs_user_data_dir`. Do not keep repeating QR/SMS
+  login attempts once the provider has captured a platform error clearly.
+- MediaCrawler detail runs are intentionally bounded by the provider timeout, currently 180 seconds. A longer
+  wait usually means the opened browser is waiting for login, verification, or a platform gate, so the workflow
+  should stop with diagnostics instead of silently waiting.
 - Observed MediaCrawler smoke for `http://xhslink.com/o/AAljrp051vx`: CDP cookies were present, `selfinfo`
   returned `code=-104` / no permission, note detail API hit CAPTCHA `461`, but the comment endpoint returned
   three top-level comments. This proves the fallback can recover some comments, but it must not be labelled
@@ -213,19 +220,17 @@ Xiaohongshu chapter handling:
   screenshots, and media structure. If the note author writes timestamped sections in the description,
   those can be cited as source text, but they are not treated as a separate platform chapter API.
 
-Current cookie boundary:
+Current login boundary:
 
 - Stable local cookie path: `%APPDATA%\video-bundle-agent\xiaohongshu.cookies.txt`.
 - Refresh helper: `scripts/refresh-xiaohongshu-cookies.ps1`.
-- Stable dedicated CDP Chrome profile: `%APPDATA%\video-bundle-agent\chrome-xiaohongshu-profile`.
-- CDP launch helper: `scripts/start-xiaohongshu-cdp-chrome.ps1`, default port `9231`.
-- Prefer the dedicated CDP profile for MediaCrawler comments. Cookie export is secondary because mobile
-  relogin or platform verification can invalidate the desktop API session.
+- MediaCrawler comment login state: `D:\W\Codex\external\MediaCrawler\browser_data\cdp_xhs_user_data_dir`
+  by default, or the equivalent `browser_data` directory under `XHS_MEDIACRAWLER_PATH`.
+- The old `scripts/start-xiaohongshu-cdp-chrome.ps1` / port `9231` path is no longer the normal workflow.
+  It can remain as a manual debugging helper, but the provider should call MediaCrawler's official workflow
+  and let MediaCrawler auto-launch/save its own browser profile.
 - Cookies are passed explicitly with `--cookies`; direct `--cookies-from-browser` is not supported for
   Xiaohongshu.
-- The explicit signed `xhs` fallback usually needs cookie fields such as `a1`, `web_session`, and `webId`.
-- The local signer currently uses the `xhs` Python signing helper. It is retained for debugging compatibility,
-  not as the default comment collector.
 
 External reference notes:
 
@@ -236,8 +241,8 @@ External reference notes:
   Do not import it as the primary provider path. If used, keep it behind a bounded, explicit browser-fallback
   adapter and record diagnostics when selectors, login, or platform verification fail.
 
-Do not vendor or embed the full `MediaCrawler` framework into the main project at the start.
-Keep a small adapter/provider boundary and connect heavier pieces only when needed.
+Do not copy the full `MediaCrawler` source tree into `src/video_bundle_agent/`.
+Keep it as a managed external checkout with a small adapter/provider boundary.
 
 ## Safety Notes
 

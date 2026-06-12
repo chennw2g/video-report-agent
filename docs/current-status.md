@@ -1,199 +1,250 @@
 # Current Status
 
-Last updated: 2026-06-08 21:15 +08:00
+Last updated: 2026-06-12 13:26 +08:00
 
-This file is the short project snapshot to read after context compaction.
+This file is the short project snapshot to read after context compaction. Update it after every material
+project change that affects capabilities, provider state, report contracts, validation status, known blockers,
+external tool state, or recommended next steps.
 
 ## Project State
 
-- The repo is now the Python-first `video-bundle-agent` project, not a `steipete/summarize` fork.
-- The bundle engine creates local, inspectable evidence bundles and does not call an LLM.
-- The workflow is split into two skill responsibilities: `video-bundle-prep` prepares reusable bundle evidence,
-  and `video-report` writes final Chinese HTML/long-PNG reports. PDF is optional compatibility output.
-- `video-report` may still accept a raw link or local file and invoke the prep workflow automatically.
-- Plugin shell creation is intentionally deferred until quick/deep report sections and visual output design are stable.
-- Minimum report evidence remains transcript or audio transcription plus screenshots/keyframes. Comments are optional.
+- The repo is the Python-first `video-bundle-agent` project, not a `steipete/summarize` fork.
+- The Python bundle engine creates local, inspectable evidence bundles and does not call an LLM.
+- The user-facing workflow is split into two skill responsibilities:
+  - `video-bundle-prep`: prepares reusable bundle evidence, classifies the video after reading text evidence,
+    chooses a visual recall strategy, extracts frames, checks readiness, and writes mode-independent
+    `report.input.json`.
+  - `video-report`: writes final Chinese HTML and preferred long-PNG reports. It can call the prep workflow
+    automatically when the user gives it a raw link or local video.
+- Plugin shell creation is intentionally deferred until report structure and visual output are stable.
+- Minimum report evidence remains transcript or audio transcription plus screenshots/keyframes. Comments are
+  optional.
+
+## Git State
+
+- Current branch: `main`.
+- Current working tree: has active Xiaohongshu MediaCrawler-only workflow edits; latest focused tests and
+  ruff pass as of this update.
+- Latest commits:
+  - `79956e1 Fix report metric card label alignment`
+  - `5ea89ed Initial video bundle agent baseline`
 
 ## Provider State
 
-- YouTube: working basic provider with metadata, native chapters from yt-dlp `chapters` when available,
-  subtitles/transcription fallback, bounded comments, audience feedback, retained working video, staged visual
-  recall, and report smoke coverage.
-- Bilibili: API-first provider is implemented for metadata, native source chapters through player
-  `view_points`, playurl media, transcription, visual recall, and top-liked bounded comments. Danmaku is
-  disabled by default.
-- Xiaohongshu: lightweight provider is implemented for short-link resolution, HTML note extraction, `media.json`, media download, local transcription, visual recall, MediaCrawler-first bounded top-level comments, and explicit local-signer fallback/debug support.
+- YouTube: working provider with metadata, yt-dlp chapters when available, subtitles/transcription fallback,
+  bounded top comments, audience feedback, retained working media, visual recall, and report smoke coverage.
+- Bilibili: API-first provider with metadata, native player `view_points` chapters, playurl media,
+  transcription, visual recall, top-liked bounded comments, and report smoke coverage. Danmaku is disabled by
+  default.
+- Xiaohongshu: lightweight provider with short-link resolution, HTML note extraction, media download,
+  transcription, visual recall, and MediaCrawler-only bounded top-level comments through the managed
+  external MediaCrawler runtime.
+- Local video: skeleton/basic provider remains lower priority.
 
 ## Report Output State
 
-- Report visual style v1 is fixed as Template D / `Editorial Lab`.
-- The visual contract is documented in `docs/report-visual-style.md`. It is visual-only and covers color,
-  layout, typography, spacing, cards, media presentation, chart/table styling, badges, and responsive/PDF
-  behavior. Content order, rating placement, label text, comment rules, and concrete report writing rules
-  remain in `docs/report-output-contract.md` and `skills/video-report/SKILL.md`.
-- The static proof is `outputs/report-style-variants/deep-template-d-editorial-lab-score-first.html`.
-- Current renderer is `skills/video-report/scripts/render_report.py`; it renders mode-specific Chinese HTML
-  and preferred long-image PNG of the main report body without the left navigation. PDF remains optional
-  compatibility output.
-- Renderer now supports the frozen v1 fields: mode-specific quick/deep output names, inline section visual
-  evidence, AI evaluation chart, diagnostic/attention notes, representative comments, source/AI labels,
-  and optional AI-organized visuals.
-- Canonical report content decisions are consolidated in `docs/report-output-contract.md`.
-- Report content structure v1 and visual baseline v1 are frozen as of 2026-06-07. Next report-output work
-  should focus on renderer implementation unless the content or visual contract is explicitly reopened.
-- The report workflow contract remains evidence-first: bundle evidence first, Codex writes mode-specific
-  report content JSON, then the renderer produces mode-specific HTML and long-image PNG when Playwright/Chrome
-  export works.
-- Do not treat `report.content.draft.json` as final content; it is still only a scaffold.
 - Formal report modes are `quick` and `deep`.
-- Default mode is `quick`; `deep` is used only when the user explicitly says `深入分析`, `深度报告`, `详细解读`, or `deep 模式`.
-- `quick` and `deep` share the same HTML/PNG design system. The difference is report depth and evidence density.
-- Bundle preparation and `report.input.json` are mode-independent so the same bundle can be reused for both report modes.
-- Mode-specific final files are `report.content.quick.json` / `report.zh.quick.html` /
-  `report.zh.quick.png` and `report.content.deep.json` / `report.zh.deep.html` / `report.zh.deep.png`.
-  PDF files may be produced only as secondary compatibility exports.
-- Reports keep a small bottom provenance signature in the form
-  `Generated by <agent> (Powered by <model>)`. The current default is
-  `Generated by CODEX (Powered by GPT-5 Codex)`, overridable through `signature_agent` and
-  `signature_model` in `report.content.<mode>.json`. The agent is the execution agent/shell, not the
-  report project name.
-- Report hero/header layout should preserve the representative image at its natural aspect ratio and center it
-  against the text block. Do not force the image into a 3:2/4:3 frame, add a decorative border, or require
-  exact top/bottom alignment. Header titles, tags, and metric values should be written compactly by the report
-  content step. The renderer may auto-reduce title and metric-value font sizes to fit target lines, but should
-  not hide key metadata with clipping or ellipses.
+- Default mode is `quick`; `deep` is used only when the user explicitly asks for deep analysis.
+- `quick` and `deep` share the same HTML/PNG design system. They differ in depth and evidence density.
+- Preferred final artifacts are HTML and long PNG. PDF is optional compatibility output only.
+- Report visual style v1 is Template D / `Editorial Lab`.
+- The renderer is `skills/video-report/scripts/render_report.py`.
+- The compact AI multi-dimensional evaluation chart is rendered immediately after the top source information
+  and before the video overview.
+- Reports use `AI` wording in user-facing section labels, not `Codex`, so the workflow can later run on other
+  agent/model shells.
+- Footer signature format is `Generated by <agent> (Powered by <model>)`; current default is
+  `Generated by CODEX (Powered by GPT-5 Codex)`.
+- Header representative images keep their natural aspect ratio and are centered against the text block.
+- Portrait/vertical hero images now render inside a stable 3:2 horizontal contain box so vertical video
+  frames do not stretch the title/header layout.
+- Header title and metric values may auto-reduce font size to fit target lines without clipping or ellipses.
+- Header metric labels such as `平台`, `频道`, and `发布时间` are anchored in the bottom label area so value
+  auto-shrinking does not move labels out of alignment.
 - If `source_chapters.json` exists, reports must use native source chapters as the content-map/chapter basis.
-  Bilibili `metadata.pages` is page/part metadata only and must not be mistaken for original chapters.
-  Native chapter sources currently supported: Bilibili player `view_points` and YouTube yt-dlp `chapters`.
-  Xiaohongshu has no reliable native chapter source and should use natural sections.
-- Both modes include the same AI multi-dimensional evaluation chart on a 1-5 scale: credibility,
-  originality, value density, argument strength, information density, and timeliness.
-- The compact AI multi-dimensional evaluation chart is now a first-glance module: render it immediately
-  after the top basic/source information and before the video overview. Keep detailed rating reasoning in a
-  later AI critique/detailed evaluation section.
-- `quick` audience feedback is brief. `deep` may cite representative comments, and cited comments should
-  include short original quotes plus `like_count` when available. Partial comment samples must be labelled
-  as partial.
-- Evidence attribution is mode-aware: `quick` stays lightweight, while `deep` should trace key claims,
-  disputed judgments, important data, and tutorial steps back to bundle evidence.
-- Both modes keep a final evidence index. `quick` lists key bundle files; `deep` may include used
-  screenshots, transcript/comparison files, cited comment files, and relevant diagnostics.
-- Reports may include a lightweight `注意事项` module near the end for source cautions, diagnostics, and
-  report limits that materially affect interpretation. Blocking issues still stop substantive report writing
-  and should produce repair steps.
-- Reports should distinguish source material from AI interpretation with lightweight labels when useful,
-  especially for AI-organized charts, tables, risk notes, and evaluations.
-- `quick` only includes the fixed multi-dimensional evaluation chart by default. `deep` may include
-  AI-organized visuals when useful, but they must be labelled and evidence-traceable.
+  Bilibili `metadata.pages` is page/part metadata only, not original chapters.
 
 ## Xiaohongshu Current Finding
 
-The latest Xiaohongshu login/debug session reached a real logged-in web UI state and exported cookies to:
+Current Xiaohongshu comment status: promoted to MediaCrawler-only. The provider now invokes MediaCrawler's
+official `xhs detail` workflow, reads its `jsonl` output, and no longer uses the old bundled local signer path.
+
+Optional exported cookie path for metadata/media requests:
 
 ```text
 %APPDATA%\video-bundle-agent\xiaohongshu.cookies.txt
 ```
 
-The comment API still returned:
-
-```text
-code=300011
-msg=当前账号存在异常，请切换账号后重试
-```
-
-This is treated as a platform account/session risk or interactive-verification response, not a missing-cookie-only problem. The provider now records this as `PERMISSION_REQUIRED` in `diagnostics.json`. Login-expired responses such as `-100` are recorded as `COOKIE_REQUIRED`.
-
-MediaCrawler has been cloned to:
+External MediaCrawler checkout:
 
 ```text
 D:\W\Codex\external\MediaCrawler
 ```
 
-Dedicated Xiaohongshu CDP Chrome profile:
+MediaCrawler saved login profile:
 
 ```text
-%APPDATA%\video-bundle-agent\chrome-xiaohongshu-profile
+D:\W\Codex\external\MediaCrawler\browser_data\cdp_xhs_user_data_dir
 ```
 
-Launch/reuse helper:
+The first MediaCrawler run may open a browser for QR/SMS login. Later runs should reuse this saved profile.
+MediaCrawler official `xhs detail` runs are bounded to 180 seconds in the provider. If the run exceeds that,
+treat it as login, verification, or platform blocking instead of waiting silently.
 
-```powershell
-scripts/start-xiaohongshu-cdp-chrome.ps1 -Port 9231
-```
+Latest successful comment recovery on `http://xhslink.com/o/SRjpwmmZKw`:
 
-The helper was run on 2026-06-06 and reused the existing CDP Chrome on port `9231`. This is the preferred
-stable workflow: log in or complete verification in that dedicated browser, then rerun MediaCrawler comments.
+- Date: 2026-06-11.
+- CDP endpoint: `http://127.0.0.1:9231`.
+- CDP cookies were present: 15 Xiaohongshu cookies.
+- `selfinfo` returned `code=0`, `success=true`, nickname `Chenn`.
+- Parsed note id: `6937701d00000000190273c4`.
+- Note detail API succeeded.
+- MediaCrawler comment API succeeded with 100 top-level comments.
+- Raw output: `outputs/mediacrawler-xhs-comments-SRjpwmmZKw-20260611-221046/`.
+- Main project normalization also succeeded with `count_fetched=100`,
+  `candidate_source=mediacrawler_xhshow_comment_page`, `selfinfo_ok=true`, and top comment
+  `like_count=6196`.
+- Normalized output: `outputs/xhs-comments-normalized-SRjpwmmZKw-20260611-221954/comments.json`.
+- This validation used the earlier smoke/CDP helper path. The current code has since been changed to call
+  MediaCrawler's official detail/jsonl workflow; the newer live smoke below supersedes this older helper
+  validation.
 
-Current MediaCrawler smoke on `http://xhslink.com/o/AAljrp051vx`:
+Operational rules:
 
-- CDP Chrome on port `9231` was reachable and exposed 16 Xiaohongshu cookies.
-- MediaCrawler `selfinfo` returned `code=-104`, message: 当前登录的账号没有权限访问.
-- Note detail API hit CAPTCHA status `461`.
-- Comment API returned 3 top-level comments; raw output is under `outputs/mediacrawler-xhs-api-smoke-20260606-215643/`.
-- Main provider fallback function was also smoke-tested and returned `count_fetched=3`; raw output is under
-  `outputs/xhs-mediacrawler-provider-fallback-20260606-221036/`.
-- Main provider now treats MediaCrawler as the default comment path. The bundled local signer is retained only
-  for explicit fallback/debug runs such as `--xhs-sign-url local`.
+- Prefer MediaCrawler's own saved browser profile for Xiaohongshu comments.
+- Do not require manual startup of the old port `9231` dedicated CDP browser in normal runs.
+- Do not repeat QR/SMS login loops by default. First let MediaCrawler try its saved login profile.
+- If platform risk-control responses return again, keep bundle creation moving and record comments as
+  diagnostics rather than blocking the main report.
+- Retest note: after exporting fresh cookies from the logged-in CDP browser on 2026-06-11, the original
+  `xhs` + builtin local signer path still returned `300011` (`当前账号存在异常，请切换账号后重试`) for
+  `SRjpwmmZKw`. This confirms MediaCrawler should remain the only supported comment path.
 
-Current MediaCrawler smoke on `http://xhslink.com/o/SRjpwmmZKw`:
+Historical risk patterns:
 
-- Short-link resolution must stop at the first `Location`; following redirects lands on `/login`.
-- Resolved note id: `6937701d00000000190273c4`.
-- CDP cookies were present, but `selfinfo` still returned `code=-104`, message: 当前登录的账号没有权限访问.
-- Note detail and comments both hit CAPTCHA status `461` / `Verifytype=301`.
-- No `comments.raw.json` was produced. Raw status is under
-  `outputs/mediacrawler-xhs-api-smoke-SRjpwmmZKw-20260606-222915/` and
-  `outputs/xhs-mediacrawler-provider-SRjpwmmZKw-20260606-223110/`.
+- `300011`: account/session risk or interactive verification.
+- `461` / `Verifytype=301`: CAPTCHA or verification gate.
+- `-100`: login expired.
 
-Latest Xiaohongshu login handoff finding:
-
-- The dedicated CDP Chrome on port `9231` is the correct process/profile:
-  `%APPDATA%\video-bundle-agent\chrome-xiaohongshu-profile`.
-- QR scan did reach the web login flow, but the page then showed `Please bind mobile number`.
-- The page requested mobile-number SMS verification before completing web login.
-- Filling `15336626310` and clicking `Get code` returned: `Requests too frequent. Try again later.`
-- Therefore Xiaohongshu comment login work is intentionally paused. Do not keep requesting SMS codes or
-  refreshing QR login in this session; resume later from the same dedicated CDP Chrome profile.
-- Evidence screenshots: `outputs/xhs-tabs/tab-1.png` and `outputs/xiaohongshu-phone-code-request.png`.
-
-Do not keep repeating login or SMS/QR loops as the default next step. Xiaohongshu bundles should continue with metadata, media, transcription, screenshots, and diagnostics while comments are marked missing or partially recovered by fallback.
+The provider records these as `PERMISSION_REQUIRED` or `COOKIE_REQUIRED` diagnostics as appropriate.
 
 ## Recent Validation
 
-- Latest provider/report audit on 2026-06-08 21:15 +08:00:
-  - `uv run video-bundle-agent doctor`: warning only. Required tools are available; optional `tesseract` and `faster-whisper` are missing.
+- Latest focused Xiaohongshu comment validation on 2026-06-11 22:25 +08:00:
+  - `scripts/start-xiaohongshu-cdp-chrome.ps1 -Port 9231 -StartUrl "http://xhslink.com/o/SRjpwmmZKw"`
+    started the dedicated CDP Chrome profile.
+  - External MediaCrawler smoke returned 100 top-level comments for `SRjpwmmZKw`.
+  - Main project `_fetch_mediacrawler_comments_payload` normalized the same note into standard
+    `comments.json` with `count_fetched=100`.
+  - A full `analyze` run was not used for the final comment assertion because it entered local video
+    transcription before reaching the comment stage; this is not a comment-path failure.
+  - Follow-up fix: `_fetch_mediacrawler_comments_payload` now resolves the MediaCrawler raw output
+    directory to an absolute path before invoking the external MediaCrawler checkout. This prevents
+    repo-relative `--out outputs\...` paths from being interpreted under `D:\W\Codex\external\MediaCrawler`.
+  - Relative-output live verification succeeded at
+    `outputs/xhs-comments-relative-fix-SRjpwmmZKw-20260611-223217/` with `count_fetched=100`,
+    `raw_exists=true`, and top comment `like_count=6196`.
+  - Fresh cookies were exported from the logged-in CDP browser to
+    `%APPDATA%\video-bundle-agent\xiaohongshu.cookies.txt`.
+  - Original `xhs` + builtin local signer retry failed with `300011`; the signer route has now been removed
+    from the supported workflow.
+- Latest Xiaohongshu workflow refactor on 2026-06-11 23:10 +08:00:
+  - `xhs-signer`, `--xhs-sign-url`, `XHS_SIGN_URL`, and `signer.py` were removed.
+  - `_fetch_mediacrawler_comments_payload` now calls a project wrapper that runs MediaCrawler's official
+    `xhs detail` jsonl workflow in the external MediaCrawler uv environment.
+  - MediaCrawler is now checked by `doctor` as an optional but first-class Xiaohongshu comments runtime.
+  - `uv run pytest`: 46 passed.
+  - `uv run ruff check`: passed.
+- Latest full Xiaohongshu official MediaCrawler bundle smoke on 2026-06-11 23:57 +08:00:
+  - Input link: `http://xhslink.com/o/2e9GoqicXQ0`.
+  - First MediaCrawler run opened its own browser profile and required login. After the user logged in, the
+    saved profile worked and MediaCrawler completed the official `xhs detail` jsonl workflow.
+  - The provider now handles Xiaohongshu `/login?redirectPath=...` short-link redirects, preserves string
+    values that contain `undefined`, and falls back to MediaCrawler `detail_contents_*.jsonl` for note
+    metadata/media when the HTML initial state does not expose the target note.
+  - Follow-up decision on 2026-06-12 00:02 +08:00: the MediaCrawler provider timeout was shortened from
+    900 seconds to 180 seconds because normal saved-login runs completed quickly; longer waits should surface
+    as login or platform-gate diagnostics.
+  - Output bundle: `outputs/xhs-mediacrawler-2e9GoqicXQ0-20260611-final/`.
+  - Source id: `6a2a9e7f000000001c027ff9`; title: `胖东来员工薪资调整`; uploader: `观闻札记`.
+  - `check-bundle` result: `report_ready=true`, no blockers, no errors.
+  - Evidence counts: 10 transcript segments, 15 screenshot candidates, 100 comments, 12 selected images,
+    `report.input.json` generated.
+  - Diagnostics: one non-blocking `MEDIA_DOWNLOAD_FAILED` warning for a Xiaohongshu image URL returning
+    `404`; downloaded video evidence, transcription, screenshots, comments, and audience feedback are usable.
+  - Validation after the provider changes: `uv run pytest tests\test_xiaohongshu_provider.py` passed and
+    `uv run ruff check` passed.
+- Latest Xiaohongshu comments-only smoke on 2026-06-12 00:31 +08:00:
+  - Input link: `http://xhslink.com/o/7o738tnIekj`.
+  - Resolved source id: `6a27d2c8000000001603fef3`.
+  - MediaCrawler official detail/jsonl comment adapter completed in about 28 seconds using the saved login
+    profile; no fresh QR/SMS login was needed.
+  - Output: `outputs/xhs-comments-7o738tnIekj-20260612/comments.json`.
+  - Result: `count_fetched=23`; comments were normalized and sorted by `like_count` descending. Because the
+    platform returned fewer than the requested 100 top-level comments, the result is recorded as a partial
+    available sample rather than labelled as Top 100.
+  - Top observed comment had `like_count=14` and `reply_count=4`.
+- Latest Xiaohongshu full deep-report smoke on 2026-06-12 00:47 +08:00:
+  - Input link: `http://xhslink.com/o/8QSjKdRT9Ww`.
+  - Output bundle: `outputs/xhs-8QSjKdRT9Ww-deep-20260612/`.
+  - Stage-1 analyze completed with metadata, 319 transcript segments, 100 comments, and one non-blocking
+    `MEDIA_DOWNLOAD_FAILED` warning for a Xiaohongshu image URL returning `404`.
+  - Semantic profile: `深度分析`, with tags `内容运营`, `自媒体增长`, `平台冷启动`, and `方法论`.
+  - Visual recall: `high + fixed + max_screenshots=0`, producing 249 screenshot candidates.
+  - Readiness after frame extraction: `report_ready=true`, no blockers, no errors.
+  - Report preparation selected 16 images and generated `report.input.json`.
+  - Deep report artifacts generated:
+    - `report.content.deep.json`
+    - `report.zh.deep.html`
+    - `report.zh.deep.png`
+  - Visual QA: long PNG rendered successfully and was nonblank. This source is mostly talking-head video
+    with burned-in subtitles, so the report uses screenshots sparingly as timestamp evidence rather than as
+    a large visual gallery.
+  - Follow-up layout/content fix on 2026-06-12 13:26 +08:00: renderer now detects local portrait hero images
+    and uses a 3:2 contain box; the report content rules now say talking-head / low-visual-variation videos
+    should not embed body screenshots by default when frames only repeat subtitles or the same speaker pose.
+    The same report was re-rendered with only the hero representative frame and no inline body screenshots.
+- Latest general audit on 2026-06-11 13:57 +08:00:
+  - `git status --short --branch`: clean `main`.
   - `uv run pytest`: 48 passed.
   - `uv run ruff check`: passed.
-  - YouTube chapter normalization now writes yt-dlp `chapters` to `source_chapters.json` when available.
-  - Bilibili original chapter smoke on `BV1xuVC6AEbg`: player `view_points` returned 10 native chapters
-    and the existing bundle was backfilled with `source_chapters.json`.
-  - Long PNG export smoke: `outputs/bilibili-report-BV1xuVC6AEbg-auth-20260606-173936/report.zh.deep.body.png`
-    was generated from the HTML body without the left navigation.
-  - Project `skills/video-bundle-prep`: valid.
-  - Project `skills/video-report`: valid.
-  - Global `C:\Users\chenn\.codex\skills\video-bundle-prep`: valid.
-  - Global `C:\Users\chenn\.codex\skills\video-report`: valid.
-  - CLI entrypoints checked: `doctor`, `analyze`, `extract-frames`, `check-bundle`, `select-evidence`,
-    `prepare-report`, `compare-transcripts`, and `xhs-signer`.
-  - UTF-8 content check passed for the core docs and both skill files; PowerShell may still display Chinese
-    text as mojibake, but the files themselves are valid UTF-8.
-  - Skill validation should be run with the project virtual environment or `uv run python`; the plain system
-    Python may fail the validator with missing `PyYAML`.
-- Optional tool note:
-  - `tesseract` is not installed. OCR remains optional in the current phase.
-  - `faster-whisper` is not installed as a Python module. Current local transcription uses the installed `whisper.cpp` CLI at `D:\Workshop\whisper.cpp\v1.8.6\Release\whisper-cli.exe`.
+  - `uv run video-bundle-agent doctor`: warning only. Required tools are available; optional `tesseract`
+    and `faster-whisper` are missing.
+  - Global `C:\Users\chenn\.codex\skills\video-bundle-prep` and `video-report` matched the project skill
+    files by hash.
+  - Existing readiness checks:
+    - YouTube `outputs/youtube-csT9MTHQR5M-20260606-114149`: ready, 326 transcript segments, 80 screenshots,
+      100 comments.
+    - Bilibili `outputs/bilibili-report-BV1xuVC6AEbg-auth-20260606-173936`: ready, 1549 transcript
+      segments, 1420 screenshots, 100 comments.
+    - Xiaohongshu `outputs/xiaohongshu-smoke-20260606-195932`: ready with metadata, transcript, and
+      screenshots; older comments were missing and recorded as a warning.
+- Latest provider/report audit on 2026-06-08 21:15 +08:00:
+  - YouTube chapter normalization writes yt-dlp `chapters` to `source_chapters.json` when available.
+  - Bilibili original chapter smoke on `BV1xuVC6AEbg` returned 10 native chapters and backfilled
+    `source_chapters.json`.
+  - Long PNG export smoke generated
+    `outputs/bilibili-report-BV1xuVC6AEbg-auth-20260606-173936/report.zh.deep.body.png`.
+  - CLI entrypoints checked at that time: `doctor`, `analyze`, `extract-frames`, `check-bundle`,
+    `select-evidence`, `prepare-report`, `compare-transcripts`, and the now-removed `xhs-signer`.
+  - Core docs and both skill files were valid UTF-8; PowerShell may still display Chinese text as mojibake,
+    but the files themselves are valid UTF-8.
+
+## Known Gaps
+
+- `tesseract` is not installed. OCR remains optional in the current phase.
+- `faster-whisper` is not installed as a Python module. Current local transcription uses installed
+  `whisper.cpp` CLI at `D:\Workshop\whisper.cpp\v1.8.6\Release\whisper-cli.exe`.
+- The full Codex plugin shell is still deferred.
+- Automated selected screenshot copying, OCR-based slide filtering, complex deduplication, and image scoring
+  remain future work.
 
 ## Next Decisions
 
-- Next active phase: continue report content/style iteration using the renderer-backed Template D /
-  `Editorial Lab` baseline.
-- Keep Xiaohongshu comment-login debugging paused until the user can complete or refresh platform
-  verification in the dedicated CDP Chrome profile.
+- Continue report content/style iteration using the renderer-backed Template D baseline.
+- Keep Xiaohongshu comments on the MediaCrawler official detail/jsonl path.
+- Avoid repeated QR/SMS debugging unless MediaCrawler's saved profile actually expires or returns a platform
+  verification gate.
 - After the visual design and renderer are stable, revisit the Codex plugin shell that packages both skills
   and the Python bundle engine entrypoints.
-- External Xiaohongshu projects may be reviewed for signing, browser-session, and comment strategies.
-- `WJS-WEB/xiaohongshu-sentiment-analysis` has been reviewed as a Selenium/Chrome DOM scraping reference.
-  It can inform a future bounded browser-fallback adapter, but it does not directly solve signed API
-  comments or observed `300011` risk-control responses.
-- Any external project should be treated as a reference first, not vendored into the main project.
-- Prefer a small adapter or browser-state fallback if it clearly solves comments without bulk crawling or account-rotation behavior.
+- Treat MediaCrawler as a managed external runtime; keep other Xiaohongshu projects as references first.

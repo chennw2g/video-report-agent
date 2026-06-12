@@ -44,6 +44,10 @@ Mode boundaries:
 4. Read `report.input.json` first as the evidence index.
 5. Read the full transcript through `transcript.txt` or `transcript.segments.json` before writing `report.content.<mode>.json`.
 6. Inspect selected screenshots from `report.input.json.selected_evidence.selected_images`. Do not read every screenshot candidate by default.
+   - If `report.input.json.selected_evidence.visual_selection_plan.available` is true, use its semantic
+     anchors as the primary inspection guide.
+   - Respect `selected_evidence.selection.body_screenshot_policy`; with `selective`, include body screenshots
+     only when they add information beside the adjacent text.
 7. If `transcript.comparison.json` exists, inspect flagged windows before trusting technical terms, names, numbers, or key claims.
 8. Read metadata, comments, optional danmaku, slides, and `content_profile.json` as needed.
    - If `source_chapters.json` exists or `report.input.json.source_chapters.available` is true, use those

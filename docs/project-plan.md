@@ -123,14 +123,17 @@ Each bundle should contain:
    the visual recall policy.
 3. Implement staged visual recall through `extract-frames`: `ffprobe`, fixed/keyword/scene candidates, screenshots,
    and `slides.json`.
-4. Implement `prepare-report` so the skill can read a compact `report.input.json` with selected screenshots,
+4. Let the prep skill write `visual_selection_plan.json` after classification and transcript reading. This
+   plan contains semantic anchors, dynamic keywords, time hints, and image-need decisions for the source.
+5. Implement `prepare-report` so the skill can read a compact `report.input.json` with selected screenshots,
    transcript windows, flagged transcript-comparison windows, audience feedback, evidence files, and limitations.
-   This step runs after `content_profile.json` and `slides.json`; it does not replace full transcript reading.
-5. Update YouTube smoke acceptance so transcript/transcription and slides are both required before report writing.
-6. Validate Bilibili API-first online smoke and refine cookie/credential handling if public API access is insufficient.
-7. Validate Xiaohongshu online smoke with MediaCrawler-only bounded comments. If comment APIs return
+   This step runs after `content_profile.json`, `visual_selection_plan.json`, and `slides.json`; it does not
+   replace full transcript reading.
+6. Update YouTube smoke acceptance so transcript/transcription and slides are both required before report writing.
+7. Validate Bilibili API-first online smoke and refine cookie/credential handling if public API access is insufficient.
+8. Validate Xiaohongshu online smoke with MediaCrawler-only bounded comments. If comment APIs return
    platform risk-control responses, keep bundle creation moving and record diagnostics.
-8. Keep MediaCrawler as a managed external runtime for Xiaohongshu comments. Defer search,
+9. Keep MediaCrawler as a managed external runtime for Xiaohongshu comments. Defer search,
    author-homepage traversal, and nested feedback until the adapter boundary is clear.
 
 ## Visual Recall Module
@@ -185,6 +188,12 @@ The cap applies to the combined candidate set after fixed, keyword, and scene ca
 
 Report image volume is controlled separately by `select-evidence` and `prepare-report --max-images`.
 The skill should keep report inputs selective while letting the bundle retain broad candidate coverage.
+
+After the agent reads the transcript and content profile, it should write `visual_selection_plan.json` before
+running evidence selection. This keeps image selection semantic without making the Python tool call an LLM:
+the agent names the important anchors and whether each anchor needs an image, while the tool matches those
+anchors against transcript timestamps and `slides.json`. The selected output remains an index in
+`report.input.json`; the final report agent still decides which selected images belong in the body.
 
 Screenshots are written to:
 

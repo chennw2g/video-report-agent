@@ -96,6 +96,51 @@ def test_select_report_evidence_prefers_keyword_and_limits_images(tmp_path: Path
     assert result["selected_images"][0]["transcript_comparison_windows"]
 
 
+def test_select_report_evidence_uses_agent_visual_selection_plan(tmp_path: Path) -> None:
+    _write_bundle(tmp_path)
+    write_json(
+        tmp_path / "visual_selection_plan.json",
+        {
+            "schema_version": "0.1.0",
+            "source_type": "tutorial",
+            "visual_density": "high",
+            "body_screenshot_policy": "selective",
+            "semantic_anchors": [
+                {
+                    "id": "anchor_result",
+                    "label": "Result section",
+                    "terms": ["Result"],
+                    "time_hints": ["00:20-00:22"],
+                    "need_screenshot": True,
+                    "reason": "The result screen should be visually inspected.",
+                    "body_placement": "core_points",
+                },
+                {
+                    "id": "anchor_intro",
+                    "label": "Intro without useful visual evidence",
+                    "terms": ["Intro"],
+                    "need_screenshot": False,
+                },
+            ],
+        },
+    )
+
+    result = select_report_evidence(
+        tmp_path,
+        max_images=2,
+        plan_path=tmp_path / "visual_selection_plan.json",
+    )
+
+    assert result["selection"]["selection_strategy"] == "plan_guided"
+    assert result["selection"]["body_screenshot_policy"] == "selective"
+    assert result["visual_selection_plan"]["semantic_anchor_count"] == 2
+    assert result["selected_images"][0]["timestamp"] == 20.0
+    assert result["selected_images"][0]["selection_reasons"] == ["semantic_anchor"]
+    assert result["selected_images"][0]["anchor_label"] == "Result section"
+    assert result["selected_images"][0]["body_placement"] == "core_points"
+    assert result["selected_images"][1]["timestamp"] == 10.0
+
+
 def test_select_report_evidence_returns_blockers_for_unready_bundle(tmp_path: Path) -> None:
     write_json(tmp_path / "bundle.json", {"schema_version": "0.1.0"})
     write_json(tmp_path / "diagnostics.json", {"records": []})

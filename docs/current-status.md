@@ -1,6 +1,6 @@
 # Current Status
 
-Last updated: 2026-06-12 13:26 +08:00
+Last updated: 2026-06-12 16:04 +08:00
 
 This file is the short project snapshot to read after context compaction. Update it after every material
 project change that affects capabilities, provider state, report contracts, validation status, known blockers,
@@ -23,9 +23,10 @@ external tool state, or recommended next steps.
 ## Git State
 
 - Current branch: `main`.
-- Current working tree: has active Xiaohongshu MediaCrawler-only workflow edits; latest focused tests and
-  ruff pass as of this update.
+- Current working tree: has active visual-selection-plan implementation and documentation edits; full pytest
+  and ruff pass as of this update.
 - Latest commits:
+  - `a0d28c0 Finalize Xiaohongshu MediaCrawler workflow and report visuals`
   - `79956e1 Fix report metric card label alignment`
   - `5ea89ed Initial video bundle agent baseline`
 
@@ -63,6 +64,9 @@ external tool state, or recommended next steps.
   auto-shrinking does not move labels out of alignment.
 - If `source_chapters.json` exists, reports must use native source chapters as the content-map/chapter basis.
   Bilibili `metadata.pages` is page/part metadata only, not original chapters.
+- `video-bundle-prep` now writes an agent-authored `visual_selection_plan.json` after classification and
+  transcript reading. `select-evidence --plan` and `prepare-report --plan` use that plan to prefer semantic
+  anchors before built-in keyword and timeline fallback selection.
 
 ## Xiaohongshu Current Finding
 
@@ -204,6 +208,23 @@ The provider records these as `PERMISSION_REQUIRED` or `COOKIE_REQUIRED` diagnos
     and uses a 3:2 contain box; the report content rules now say talking-head / low-visual-variation videos
     should not embed body screenshots by default when frames only repeat subtitles or the same speaker pose.
     The same report was re-rendered with only the hero representative frame and no inline body screenshots.
+- Latest visual selection plan implementation on 2026-06-12 15:57 +08:00:
+  - Added `visual_selection_plan.json` as the agent-authored bridge between semantic intent and deterministic
+    screenshot selection.
+  - `select-evidence` and `prepare-report` accept `--plan visual_selection_plan.json`; no-plan behavior remains
+    backward compatible.
+  - `report.input.json.selected_evidence` now records selection strategy, body screenshot policy, compact plan
+    summary, and per-image anchor metadata when a plan is used.
+  - Focused validation: `uv run pytest tests\test_evidence_selection.py tests\test_report_input.py` passed
+    with 6 tests.
+  - Full validation after docs/skill sync: `uv run pytest` passed with 48 tests and `uv run ruff check`
+    passed.
+  - Project `video-bundle-prep` and `video-report` skill files were synced to
+    `C:\Users\chenn\.codex\skills\...`; SHA256 hashes matched the project files after sync.
+  - CLI flow smoke passed on `outputs/visual-selection-plan-cli-smoke/`:
+    `select-evidence --plan visual_selection_plan.json` and `prepare-report --plan visual_selection_plan.json`
+    both completed, `report.input.json` was valid UTF-8 JSON, and the first selected image used
+    `selection_strategy=plan_guided`, `selection_reasons=["semantic_anchor"]`, timestamp `20.0`.
 - Latest general audit on 2026-06-11 13:57 +08:00:
   - `git status --short --branch`: clean `main`.
   - `uv run pytest`: 48 passed.
@@ -236,8 +257,9 @@ The provider records these as `PERMISSION_REQUIRED` or `COOKIE_REQUIRED` diagnos
 - `faster-whisper` is not installed as a Python module. Current local transcription uses installed
   `whisper.cpp` CLI at `D:\Workshop\whisper.cpp\v1.8.6\Release\whisper-cli.exe`.
 - The full Codex plugin shell is still deferred.
-- Automated selected screenshot copying, OCR-based slide filtering, complex deduplication, and image scoring
-  remain future work.
+- Copying selected screenshots into `screenshots/selected/`, OCR-based slide filtering, complex visual
+  deduplication, sharpness/brightness scoring, and agent-assisted final body-image placement remain future
+  work.
 
 ## Next Decisions
 

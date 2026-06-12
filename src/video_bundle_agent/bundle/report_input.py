@@ -438,6 +438,7 @@ def prepare_report_input(
     *,
     max_images: int = 12,
     transcript_window_seconds: float = 20,
+    plan_path: Path | None = None,
     write: bool = True,
     draft_content: bool = True,
 ) -> dict[str, Any]:
@@ -448,6 +449,7 @@ def prepare_report_input(
         bundle_dir,
         max_images=max_images,
         transcript_window_seconds=transcript_window_seconds,
+        plan_path=plan_path,
     )
 
     metadata_raw = _read_bundle_artifact(bundle_dir, bundle, "metadata_path")

@@ -183,6 +183,37 @@ def test_prepare_report_input_writes_report_input_and_draft(tmp_path: Path) -> N
     assert "Transcript review targets" in draft
 
 
+def test_prepare_report_input_accepts_visual_selection_plan(tmp_path: Path) -> None:
+    _write_ready_bundle(tmp_path)
+    write_json(
+        tmp_path / "visual_selection_plan.json",
+        {
+            "schema_version": "0.1.0",
+            "source_type": "tutorial",
+            "visual_density": "medium",
+            "body_screenshot_policy": "selective",
+            "semantic_anchors": [
+                {
+                    "label": "Key setting",
+                    "terms": ["key setting"],
+                    "need_screenshot": True,
+                    "reason": "The setting step needs visual confirmation.",
+                }
+            ],
+        },
+    )
+
+    result = prepare_report_input(
+        tmp_path,
+        max_images=1,
+        plan_path=Path("visual_selection_plan.json"),
+    )
+
+    assert result["selected_evidence"]["selection"]["selection_strategy"] == "plan_guided"
+    assert result["selected_evidence"]["visual_selection_plan"]["available"] is True
+    assert result["selected_evidence"]["selected_images"][0]["anchor_label"] == "Key setting"
+
+
 def test_prepare_report_input_does_not_write_draft_for_blocked_bundle(tmp_path: Path) -> None:
     _write_ready_bundle(tmp_path, has_slides=False)
 

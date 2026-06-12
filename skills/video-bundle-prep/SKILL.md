@@ -28,12 +28,16 @@ This skill turns a video link, local video file, or existing bundle into a reusa
    Current native chapter sources are Bilibili player `view_points` and YouTube yt-dlp `chapters`.
    Xiaohongshu currently has no reliable native chapter source, so use natural sections later in report writing.
 8. Write `<bundle-dir>/content_profile.json` with `primary_type`, `type_tags`, rationale, and selected visual policy.
-9. Run `video-bundle-agent extract-frames <bundle-dir>` using the visual policy.
-10. Run `video-bundle-agent check-bundle <bundle-dir>`.
-11. If `report_ready` is false, report blockers and repair steps instead of preparing final report inputs.
-12. Run `video-bundle-agent select-evidence <bundle-dir>`.
-13. Run `video-bundle-agent prepare-report <bundle-dir>` to write mode-independent `report.input.json`.
-14. Return the bundle path, readiness status, important diagnostics, and generated artifact paths.
+9. Write `<bundle-dir>/visual_selection_plan.json` with semantic anchors, dynamic terms, time hints, and
+   per-anchor `need_screenshot` decisions. The agent decides what visual evidence matters; the tool only
+   matches those pointers against transcript timestamps and candidate screenshots.
+10. Run `video-bundle-agent extract-frames <bundle-dir>` using the visual policy.
+11. Run `video-bundle-agent check-bundle <bundle-dir>`.
+12. If `report_ready` is false, report blockers and repair steps instead of preparing final report inputs.
+13. Run `video-bundle-agent select-evidence <bundle-dir> --plan visual_selection_plan.json`.
+14. Run `video-bundle-agent prepare-report <bundle-dir> --plan visual_selection_plan.json` to write
+   mode-independent `report.input.json`.
+15. Return the bundle path, readiness status, important diagnostics, and generated artifact paths.
 
 ## Mode Boundary
 
@@ -90,8 +94,8 @@ uv run video-bundle-agent extract-frames outputs/<safe-name> `
   --max-candidate-screenshots 0
 
 uv run video-bundle-agent check-bundle outputs/<safe-name>
-uv run video-bundle-agent select-evidence outputs/<safe-name> --max-images 12
-uv run video-bundle-agent prepare-report outputs/<safe-name> --max-images 12
+uv run video-bundle-agent select-evidence outputs/<safe-name> --max-images 12 --plan visual_selection_plan.json
+uv run video-bundle-agent prepare-report outputs/<safe-name> --max-images 12 --plan visual_selection_plan.json
 ```
 
 `--max-candidate-screenshots 0` means no candidate cap. Keep candidate visual coverage complete; report rendering can choose fewer images later.
@@ -121,6 +125,49 @@ Write:
     "reason": "The report needs complete candidate coverage around UI changes and transcript cues."
   }
 }
+```
+
+## Visual Selection Plan
+
+After writing `content_profile.json` and before `select-evidence`, write `visual_selection_plan.json`.
+Use the transcript, native source chapters, content type, comments when relevant, and user focus to name the
+moments where screenshots may be useful.
+
+Do not create a generic keyword list only. The anchors should reflect this specific video: result screens,
+tool settings, chart changes, visual comparisons, chapter transitions, data tables, UI states, examples, or
+other moments where image evidence improves understanding.
+
+For low-visual-variation videos such as pure talking-head, solo podcast, or interview, set
+`body_screenshot_policy` to `selective` and mark most anchors as `need_screenshot=false`; keep only a hero or
+rare visually distinct moment if it helps.
+
+Recommended shape:
+
+```json
+{
+  "schema_version": "0.1.0",
+  "source_type": "tutorial",
+  "visual_density": "high",
+  "body_screenshot_policy": "selective",
+  "semantic_anchors": [
+    {
+      "id": "anchor_0001",
+      "label": "Final result screen",
+      "terms": ["result", "final output"],
+      "time_hints": ["03:20-03:45"],
+      "need_screenshot": true,
+      "reason": "The result must be visually checked.",
+      "body_placement": "core_points"
+    }
+  ]
+}
+```
+
+Then pass it to both evidence commands:
+
+```powershell
+uv run video-bundle-agent select-evidence outputs/<safe-name> --max-images 12 --plan visual_selection_plan.json
+uv run video-bundle-agent prepare-report outputs/<safe-name> --max-images 12 --plan visual_selection_plan.json
 ```
 
 ## Evidence Gate

@@ -276,6 +276,9 @@ These rules keep `video-bundle-agent` focused on producing reliable, inspectable
 - `report.content.draft.json` is a renderer scaffold only. It must not be treated as the final report content.
 - `report.input.json` must be generated after semantic classification and frame extraction. It is not an input
   to the classification step and does not replace `content_profile.json`.
+- `visual_selection_plan.json` is written by the prep agent after classification and transcript reading, then
+  passed to `select-evidence --plan` and `prepare-report --plan`. It is the bridge between semantic intent
+  and deterministic screenshot matching.
 - `report.input.json` is an index into evidence. The final report workflow must still read the full transcript
   through `transcript.txt` or `transcript.segments.json` before writing mode-specific report content JSON.
 
@@ -289,8 +292,10 @@ These rules keep `video-bundle-agent` focused on producing reliable, inspectable
 - `--force-transcription` is a development smoke-test option only. Normal report runs must not force local transcription when platform subtitles are usable.
 - `--no-compare-auto-subtitles` may disable the automatic-subtitle comparison path for faster diagnostics-only runs.
 - `video-bundle-prep` should run `video-bundle-agent check-bundle <bundle-dir>` as the evidence gate.
-- `video-bundle-prep` should run `video-bundle-agent select-evidence <bundle-dir>` before report writing.
-- `video-bundle-prep` should run `video-bundle-agent prepare-report <bundle-dir>` before `video-report`
+- `video-bundle-prep` should run `video-bundle-agent select-evidence <bundle-dir> --plan visual_selection_plan.json`
+  before report writing when a plan exists.
+- `video-bundle-prep` should run `video-bundle-agent prepare-report <bundle-dir> --plan visual_selection_plan.json`
+  before `video-report`
   writes mode-specific final content.
 - `prepare-report` must run after `content_profile.json` and `slides.json` exist.
 - Missing comments may be marked as missing; this does not block the main content report.
@@ -332,9 +337,14 @@ These rules keep `video-bundle-agent` focused on producing reliable, inspectable
   no reliable native chapter source; use natural sections unless source text itself contains timestamped
   structure.
 - `select-evidence` should provide a small screenshot set and nearby transcript windows for normal report writing.
+- `select-evidence` should prefer agent-authored semantic anchors from `visual_selection_plan.json` before
+  falling back to built-in keyword matching and uniform timeline coverage.
+- The agent decides what to look for: dynamic terms, time hints, source-type rationale, and whether an anchor
+  needs an image. The tool only matches those pointers against transcript segments and candidate slides.
 - `prepare-report` should persist that selected evidence in `report.input.json` so the skill can write the
   final report without rereading every bundle artifact or every screenshot.
-- `screenshots/selected/` and automated visual selection are future improvements, not required for the first fixed-interval implementation.
+- Copying selected screenshots into `screenshots/selected/`, visual duplicate removal, sharpness scoring, and
+  brightness scoring remain future improvements.
 - OCR is optional in phase 1. Create module boundaries and diagnostics, but do not block report readiness on OCR.
 - If tesseract, PaddleOCR, or another OCR provider is missing, record `OCR_TOOL_MISSING`.
 - OCR becomes a second-phase enhancement, especially for high visual recall, software demos, slides, and financial chart videos.

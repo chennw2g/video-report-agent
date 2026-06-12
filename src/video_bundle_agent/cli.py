@@ -46,10 +46,17 @@ def select_evidence(
         int,
         typer.Option("--max-images", min=1, help="Maximum screenshots to suggest."),
     ] = 12,
+    plan: Annotated[
+        Path | None,
+        typer.Option(
+            "--plan",
+            help="Agent-authored visual_selection_plan.json, relative to the bundle by default.",
+        ),
+    ] = None,
 ) -> None:
     """Suggest a small set of screenshots and transcript windows for report writing."""
 
-    result = select_report_evidence(bundle_dir, max_images=max_images)
+    result = select_report_evidence(bundle_dir, max_images=max_images, plan_path=plan)
     typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
 
 
@@ -68,6 +75,13 @@ def prepare_report(
             help="Seconds of transcript context around each selected screenshot.",
         ),
     ] = 20,
+    plan: Annotated[
+        Path | None,
+        typer.Option(
+            "--plan",
+            help="Agent-authored visual_selection_plan.json, relative to the bundle by default.",
+        ),
+    ] = None,
     write: Annotated[
         bool,
         typer.Option("--write/--no-write", help="Write report.input.json into the bundle."),
@@ -93,6 +107,7 @@ def prepare_report(
         bundle_dir,
         max_images=max_images,
         transcript_window_seconds=transcript_window_seconds,
+        plan_path=plan,
         write=write,
         draft_content=draft_content,
     )

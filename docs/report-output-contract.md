@@ -29,6 +29,11 @@ the user explicitly reopens the content or visual contract.
 
 - Bundle preparation is mode-independent.
 - `report.input.json` is mode-independent and should stay a reusable evidence index.
+- When `report.input.json.selected_evidence.visual_selection_plan.available` is true, use it as the primary
+  pointer for which screenshots deserve inspection. The plan is agent-authored semantic guidance, not a
+  replacement for reading the transcript or looking at the selected images.
+- Respect `selected_evidence.selection.body_screenshot_policy`, especially `selective`: do not place body
+  screenshots unless they materially clarify the adjacent analysis.
 - The same prepared bundle should support `quick` first and `deep` later without recollecting source material.
 - Existing bundle report runs should only perform light readiness/input checks unless the user explicitly
   asks to refresh source material.

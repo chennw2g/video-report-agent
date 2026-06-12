@@ -87,6 +87,25 @@ def _check_python_module(name: str, *, required: bool = False) -> ToolCheck:
     )
 
 
+def _check_importable_python_module(name: str, *, required: bool = False) -> ToolCheck:
+    check = _check_python_module(name, required=required)
+    if not check.available:
+        return check
+    try:
+        __import__(name.replace("-", "_"))
+    except Exception as exc:  # noqa: BLE001
+        return ToolCheck(
+            name=name,
+            required=required,
+            available=False,
+            status="error" if required else "warning",
+            version=check.version,
+            path=check.path,
+            message=f"Python module {name} was found but could not be imported: {exc}",
+        )
+    return check
+
+
 def _check_mediacrawler() -> ToolCheck:
     path = Path(os.environ.get("XHS_MEDIACRAWLER_PATH", r"D:\W\Codex\external\MediaCrawler"))
     main_path = path / "main.py"
@@ -124,6 +143,7 @@ def run_doctor() -> DoctorReport:
         _check_executable("tesseract", required=False),
         _check_executable("whisper", required=False, version_args=[]),
         _check_python_module("faster-whisper", required=False),
+        _check_importable_python_module("funasr", required=False),
         _check_python_module("xhs", required=False),
         _check_python_module("playwright", required=False),
         _check_mediacrawler(),

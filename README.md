@@ -244,6 +244,20 @@ time or disk space matters more than complete visual coverage.
 For development smoke tests, `--force-transcription` can exercise the local whisper.cpp path even when yt-dlp
 subtitles exist. It is disabled by default and should not be used for normal report runs.
 
+Whisper model selection is local and configurable. Set `VIDEO_BUNDLE_AGENT_WHISPER_MODEL` or `WHISPER_MODEL`
+to force a specific model file. Without an override, the engine prefers installed turbo/large whisper.cpp
+models, then falls back through medium, small, and base. The current workstation has
+`D:\Workshop\whisper.cpp\models\ggml-large-v3-turbo.bin` installed.
+
+FunASR can be installed with the optional extra for later Chinese ASR comparison:
+
+```powershell
+uv sync --extra funasr
+```
+
+It is experimental in this project until a same-audio smoke test compares quality, punctuation, speed, and
+speaker-related behavior against whisper.cpp.
+
 When yt-dlp only finds automatic subtitles, normal YouTube runs also create a whisper.cpp comparison transcript
 by default. Disable that extra work with `--no-compare-auto-subtitles` when speed matters more than transcript
 cross-checking.

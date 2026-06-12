@@ -20,6 +20,11 @@ This skill turns a video link, local video file, or existing bundle into a reusa
    - Xiaohongshu: lightweight metadata/media provider plus MediaCrawler-only bounded comments.
    - Local video: local media workflow.
 3. Run stage-1 collection with transcript/transcription evidence, bounded comments when requested, retained working media, no screenshots yet, and no LLM calls.
+   - Do not hard-code a Whisper model in the skill. Local model selection belongs to the bundle engine and
+     environment: `VIDEO_BUNDLE_AGENT_WHISPER_MODEL` / `WHISPER_MODEL` may override, otherwise the engine
+     prefers installed turbo/large models before falling back to smaller models.
+   - FunASR may be installed as an optional experimental ASR backend, but do not treat it as the default
+     transcription path until a same-audio smoke comparison has been documented.
 4. Read `manifest.json`, `diagnostics.json`, `metadata.json`, and transcript/transcription evidence.
 5. If transcript/transcription is missing, inspect diagnostics and report whether the source is invalid or the tool/provider failed. Do not continue to report preparation.
 6. Classify the video semantically from title, description, native source chapters, transcript, and user focus. Do not use keyword-count rules as the classifier.

@@ -291,6 +291,12 @@ These rules keep `video-bundle-agent` focused on producing reliable, inspectable
 - When a comparison transcript exists, write `transcript.comparison.json` to highlight timestamped disagreements and technical-term differences without using an LLM.
 - `--force-transcription` is a development smoke-test option only. Normal report runs must not force local transcription when platform subtitles are usable.
 - `--no-compare-auto-subtitles` may disable the automatic-subtitle comparison path for faster diagnostics-only runs.
+- Local whisper.cpp model choice must not be hard-coded by the skill. The engine should respect
+  `VIDEO_BUNDLE_AGENT_WHISPER_MODEL` or `WHISPER_MODEL` first, then prefer installed turbo/large models before
+  falling back to medium, small, and base models.
+- FunASR is an optional experimental ASR backend for later Chinese-speed/quality comparison. It may be
+  installed as the `funasr` extra, but it is not the default transcription path until smoke comparisons are
+  documented.
 - `video-bundle-prep` should run `video-bundle-agent check-bundle <bundle-dir>` as the evidence gate.
 - `video-bundle-prep` should run `video-bundle-agent select-evidence <bundle-dir> --plan visual_selection_plan.json`
   before report writing when a plan exists.

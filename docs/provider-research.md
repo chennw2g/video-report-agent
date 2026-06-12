@@ -67,12 +67,18 @@ Transcript fallback:
 - If no usable subtitle is available, download a bounded working audio file.
 - Convert the audio to 16 kHz mono WAV with ffmpeg.
 - Transcribe with local whisper.cpp when available.
+- whisper.cpp model choice is local and configurable. `VIDEO_BUNDLE_AGENT_WHISPER_MODEL` or `WHISPER_MODEL`
+  overrides all defaults; otherwise the engine prefers installed `large-v3-turbo` / turbo variants before
+  falling back to large, medium, small, and base models.
 - If the local transcription tool or model is missing, write diagnostics instead of inventing transcript text.
 - Keep forced local transcription behind an explicit development option; do not enable it by default.
 - If yt-dlp reports only automatic captions and no manual subtitles, keep the platform transcript as primary and
   write a whisper.cpp comparison transcript by default.
 - Write `transcript.comparison.json` so downstream Codex can inspect timestamped disagreements instead of manually
   diffing full transcript files.
+- FunASR is installed as an optional experimental backend for later comparison on Chinese speech, punctuation,
+  speed, and speaker-related capabilities. Do not route normal provider transcription through FunASR until a
+  documented smoke test compares it with whisper.cpp on the same audio.
 
 YouTube chapter handling:
 

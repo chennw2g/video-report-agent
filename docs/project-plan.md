@@ -119,6 +119,9 @@ Each bundle should contain:
    a 1080p-or-best-available working video, whisper.cpp audio transcription fallback when subtitles are missing,
    whisper.cpp comparison transcripts when only automatic subtitles are available, and deterministic transcript
    comparison output for report-time inspection.
+   Whisper.cpp model selection is local and configurable; installed turbo/large models should be preferred over
+   small fallback models unless the user sets an explicit model path. FunASR is an optional experimental ASR
+   backend for later Chinese transcription comparison, not the default provider path yet.
 2. Let the Video Report Skill read stage-1 text evidence, classify the video, write `content_profile.json`, and choose
    the visual recall policy.
 3. Implement staged visual recall through `extract-frames`: `ffprobe`, fixed/keyword/scene candidates, screenshots,

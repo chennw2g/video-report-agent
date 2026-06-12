@@ -1,6 +1,6 @@
 # Current Status
 
-Last updated: 2026-06-12 16:04 +08:00
+Last updated: 2026-06-12 17:22 +08:00
 
 This file is the short project snapshot to read after context compaction. Update it after every material
 project change that affects capabilities, provider state, report contracts, validation status, known blockers,
@@ -67,6 +67,12 @@ external tool state, or recommended next steps.
 - `video-bundle-prep` now writes an agent-authored `visual_selection_plan.json` after classification and
   transcript reading. `select-evidence --plan` and `prepare-report --plan` use that plan to prefer semantic
   anchors before built-in keyword and timeline fallback selection.
+- Local whisper.cpp transcription now prefers installed turbo/large models by default, while still allowing
+  `VIDEO_BUNDLE_AGENT_WHISPER_MODEL` or `WHISPER_MODEL` to override the model path.
+- `D:\Workshop\whisper.cpp\models\ggml-large-v3-turbo.bin` is installed and should be the default
+  whisper.cpp model when no environment override is set.
+- FunASR is installed as an optional experimental ASR extra with CUDA PyTorch for future Chinese transcription
+  comparison; it is not yet the default provider transcription backend.
 
 ## Xiaohongshu Current Finding
 
@@ -225,6 +231,16 @@ The provider records these as `PERMISSION_REQUIRED` or `COOKIE_REQUIRED` diagnos
     `select-evidence --plan visual_selection_plan.json` and `prepare-report --plan visual_selection_plan.json`
     both completed, `report.input.json` was valid UTF-8 JSON, and the first selected image used
     `selection_strategy=plan_guided`, `selection_reasons=["semantic_anchor"]`, timestamp `20.0`.
+- Latest ASR runtime update on 2026-06-12 17:22 +08:00:
+  - Downloaded whisper.cpp `ggml-large-v3-turbo.bin` to `D:\Workshop\whisper.cpp\models\`.
+  - Changed whisper.cpp model discovery to prefer env override, then turbo/large, medium, small, and base.
+  - Installed optional `funasr` extra in the project environment: `funasr 1.3.9`,
+    `torch 2.11.0+cu128`, `torchaudio 2.11.0+cu128`.
+  - Verified FunASR imports successfully and PyTorch CUDA is available on
+    `NVIDIA GeForce RTX 5060 Laptop GPU`.
+  - Verified `whisper_cpp_model_path()` selects `ggml-large-v3-turbo.bin` with no environment override.
+  - Validation: `uv run video-bundle-agent doctor` reports FunASR available; `uv run pytest` passed with
+    50 tests; `uv run ruff check` passed.
 - Latest general audit on 2026-06-11 13:57 +08:00:
   - `git status --short --branch`: clean `main`.
   - `uv run pytest`: 48 passed.
@@ -254,8 +270,9 @@ The provider records these as `PERMISSION_REQUIRED` or `COOKIE_REQUIRED` diagnos
 ## Known Gaps
 
 - `tesseract` is not installed. OCR remains optional in the current phase.
-- `faster-whisper` is not installed as a Python module. Current local transcription uses installed
+- `faster-whisper` is not installed as a Python module. Current production local transcription uses installed
   `whisper.cpp` CLI at `D:\Workshop\whisper.cpp\v1.8.6\Release\whisper-cli.exe`.
+- FunASR still needs a same-audio comparison smoke before it becomes a provider option or default backend.
 - The full Codex plugin shell is still deferred.
 - Copying selected screenshots into `screenshots/selected/`, OCR-based slide filtering, complex visual
   deduplication, sharpness/brightness scoring, and agent-assisted final body-image placement remain future

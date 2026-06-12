@@ -9,22 +9,40 @@ from typing import Any
 from video_bundle_agent.tools.paths import WORKSHOP_ROOT, find_executable
 from video_bundle_agent.tools.process import run_command
 
+WHISPER_CPP_MODEL_FILENAMES = (
+    "ggml-large-v3-turbo.bin",
+    "ggml-large-v3-turbo-q8_0.bin",
+    "ggml-large-v3-turbo-q5_0.bin",
+    "ggml-large-v3-turbo-q5_1.bin",
+    "ggml-large-v3-turbo-q4_0.bin",
+    "ggml-large-v3-turbo-q4_1.bin",
+    "ggml-large-v3.bin",
+    "ggml-medium.bin",
+    "ggml-small.bin",
+    "ggml-base.bin",
+)
 
-def whisper_cpp_model_path() -> Path | None:
+
+def whisper_cpp_model_candidates() -> list[Path]:
     env_candidates = [
         os.environ.get("VIDEO_BUNDLE_AGENT_WHISPER_MODEL"),
         os.environ.get("WHISPER_MODEL"),
     ]
     candidates = [Path(value) for value in env_candidates if value]
+    model_dirs = [
+        WORKSHOP_ROOT / "whisper.cpp" / "models",
+        WORKSHOP_ROOT / "whisper.cpp" / "v1.8.6" / "models",
+    ]
     candidates.extend(
-        [
-            WORKSHOP_ROOT / "whisper.cpp" / "models" / "ggml-base.bin",
-            WORKSHOP_ROOT / "whisper.cpp" / "models" / "ggml-small.bin",
-            WORKSHOP_ROOT / "whisper.cpp" / "models" / "ggml-medium.bin",
-            WORKSHOP_ROOT / "whisper.cpp" / "v1.8.6" / "models" / "ggml-base.bin",
-        ]
+        model_dir / filename
+        for model_dir in model_dirs
+        for filename in WHISPER_CPP_MODEL_FILENAMES
     )
-    for candidate in candidates:
+    return candidates
+
+
+def whisper_cpp_model_path() -> Path | None:
+    for candidate in whisper_cpp_model_candidates():
         if candidate.exists() and candidate.is_file():
             return candidate
     return None

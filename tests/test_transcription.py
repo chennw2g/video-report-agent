@@ -1,7 +1,11 @@
 import json
 from pathlib import Path
 
-from video_bundle_agent.media.transcription import parse_whisper_cpp_json, whisper_output_path
+from video_bundle_agent.media.transcription import (
+    parse_whisper_cpp_json,
+    whisper_cpp_model_candidates,
+    whisper_output_path,
+)
 
 
 def test_parse_whisper_cpp_json_uses_offsets(tmp_path: Path) -> None:
@@ -62,3 +66,16 @@ def test_parse_whisper_cpp_json_uses_timestamps(tmp_path: Path) -> None:
 
 def test_whisper_output_path_preserves_dotted_stem(tmp_path: Path) -> None:
     assert whisper_output_path(tmp_path / "video.16k", ".json").name == "video.16k.json"
+
+
+def test_whisper_model_candidates_prefer_turbo_before_base() -> None:
+    names = [path.name for path in whisper_cpp_model_candidates()]
+
+    assert names.index("ggml-large-v3-turbo.bin") < names.index("ggml-base.bin")
+
+
+def test_whisper_model_candidates_allow_environment_override(monkeypatch, tmp_path: Path) -> None:
+    custom_model = tmp_path / "custom-whisper.bin"
+    monkeypatch.setenv("VIDEO_BUNDLE_AGENT_WHISPER_MODEL", str(custom_model))
+
+    assert whisper_cpp_model_candidates()[0] == custom_model

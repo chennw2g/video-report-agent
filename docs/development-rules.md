@@ -294,9 +294,13 @@ These rules keep `video-bundle-agent` focused on producing reliable, inspectable
 - Local whisper.cpp model choice must not be hard-coded by the skill. The engine should respect
   `VIDEO_BUNDLE_AGENT_WHISPER_MODEL` or `WHISPER_MODEL` first, then prefer installed turbo/large models before
   falling back to medium, small, and base models.
-- FunASR is an optional experimental ASR backend for later Chinese-speed/quality comparison. It may be
-  installed as the `funasr` extra, but it is not the default transcription path until smoke comparisons are
-  documented.
+- FunASR is an optional experimental ASR backend. Same-audio benchmark coverage exists for one Chinese
+  Bilibili video and one English YouTube video. Do not make it the default provider route yet: use the
+  benchmark result as guidance only, with Paraformer-zh as the current Chinese-speed candidate and Whisper
+  large-v3-turbo as the English/default-quality choice.
+- YouTube yt-dlp calls should support the current EJS challenge path. Keep the Python dependency on
+  `yt-dlp[default]`; when format extraction returns only storyboard images plus `n challenge solving failed`,
+  retry with a supported JS runtime such as `--js-runtimes node`.
 - `video-bundle-prep` should run `video-bundle-agent check-bundle <bundle-dir>` as the evidence gate.
 - `video-bundle-prep` should run `video-bundle-agent select-evidence <bundle-dir> --plan visual_selection_plan.json`
   before report writing when a plan exists.

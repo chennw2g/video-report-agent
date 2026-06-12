@@ -241,6 +241,28 @@ The provider records these as `PERMISSION_REQUIRED` or `COOKIE_REQUIRED` diagnos
   - Verified `whisper_cpp_model_path()` selects `ggml-large-v3-turbo.bin` with no environment override.
   - Validation: `uv run video-bundle-agent doctor` reports FunASR available; `uv run pytest` passed with
     50 tests; `uv run ruff check` passed.
+- Latest ASR benchmark update on 2026-06-12 19:45 +08:00:
+  - Added `scripts/asr_benchmark.py` for local same-audio ASR comparison. It writes `.segments.json`, `.txt`,
+    `.srt`, `.timed.txt`, and `timings.json`. Detailed benchmark notes are in
+    `docs/asr-benchmark-20260612.md`.
+  - Bilibili Chinese benchmark source: `https://b23.tv/eViSC63`, `BV1wEVo6eEYv`, duration 2600.4 seconds.
+    Outputs are under `outputs/asr-benchmark-20260612/bilibili_full/`.
+    - Whisper large-v3-turbo: 1617.34 seconds, RTF 0.622, 1664 segments.
+    - SenseVoiceSmall + fsmn-vad + cam++: 118.52 seconds, RTF 0.046, 143 normalized segments.
+    - Paraformer-zh + fsmn-vad + ct-punc + cam++: 105.47 seconds, RTF 0.041, 405 normalized segments.
+    - Initial read: Paraformer-zh is the best Chinese report-input candidate among the FunASR pair because
+      it has stronger punctuation/paragraph usability; SenseVoiceSmall keeps useful emotion/language tags but
+      segments more coarsely without an external punc model. Whisper is much slower on this CPU path.
+  - YouTube English benchmark source: `https://youtu.be/AOEr5FrW-lY`, `AOEr5FrW-lY`, duration 1238.0
+    seconds. Outputs are under `outputs/asr-benchmark-20260612/youtube_full/`.
+    - Whisper large-v3-turbo: 802.58 seconds, RTF 0.648, 340 segments.
+    - SenseVoiceSmall + fsmn-vad + cam++: 55.64 seconds, RTF 0.045, 146 normalized segments.
+    - Paraformer-zh + fsmn-vad + ct-punc + cam++: 63.66 seconds, RTF 0.051, 158 normalized segments.
+    - Initial read: Whisper large-v3-turbo is clearly best for English accuracy and punctuation. The two
+      Chinese-oriented FunASR paths are fast but introduce word breaks, wrong names, or mixed-language noise.
+  - Installed project Python dependency `yt-dlp[default]` so PyPI yt-dlp includes `yt-dlp-ejs`. YouTube format
+    extraction for `AOEr5FrW-lY` required `--js-runtimes node`; without EJS it returned only storyboard
+    images and `n challenge solving failed`.
 - Latest general audit on 2026-06-11 13:57 +08:00:
   - `git status --short --branch`: clean `main`.
   - `uv run pytest`: 48 passed.
@@ -272,7 +294,8 @@ The provider records these as `PERMISSION_REQUIRED` or `COOKIE_REQUIRED` diagnos
 - `tesseract` is not installed. OCR remains optional in the current phase.
 - `faster-whisper` is not installed as a Python module. Current production local transcription uses installed
   `whisper.cpp` CLI at `D:\Workshop\whisper.cpp\v1.8.6\Release\whisper-cli.exe`.
-- FunASR still needs a same-audio comparison smoke before it becomes a provider option or default backend.
+- FunASR benchmark output is available, but it is not yet wired as a normal provider backend or model-selection
+  option.
 - The full Codex plugin shell is still deferred.
 - Copying selected screenshots into `screenshots/selected/`, OCR-based slide filtering, complex visual
   deduplication, sharpness/brightness scoring, and agent-assisted final body-image placement remain future

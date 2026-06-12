@@ -249,14 +249,17 @@ to force a specific model file. Without an override, the engine prefers installe
 models, then falls back through medium, small, and base. The current workstation has
 `D:\Workshop\whisper.cpp\models\ggml-large-v3-turbo.bin` installed.
 
-FunASR can be installed with the optional extra for later Chinese ASR comparison:
+FunASR can be installed with the optional extra for Chinese ASR comparison:
 
 ```powershell
 uv sync --extra funasr
 ```
 
-It is experimental in this project until a same-audio smoke test compares quality, punctuation, speed, and
-speaker-related behavior against whisper.cpp.
+It remains experimental for normal provider routing. A 2026-06-12 benchmark compared Whisper
+large-v3-turbo, SenseVoiceSmall, and Paraformer-zh on one Chinese Bilibili video and one English YouTube
+video. Paraformer-zh was fastest and most report-friendly on Chinese speech; Whisper large-v3-turbo was
+clearly best for English. Do not make FunASR the default backend until provider-level selection and output
+normalization are implemented.
 
 When yt-dlp only finds automatic subtitles, normal YouTube runs also create a whisper.cpp comparison transcript
 by default. Disable that extra work with `--no-compare-auto-subtitles` when speed matters more than transcript
@@ -282,3 +285,5 @@ uv run video-bundle-agent analyze "https://www.youtube.com/watch?v=474wZZHoWN4" 
 Cookies are never read by default and must not be committed to the repository.
 `--cookies-from-browser chrome` is available, but this Windows machine has already shown DPAPI
 decryption failures with direct Chrome cookie reads, so the exported cookies file is the stable path.
+The project depends on `yt-dlp[default]` so the Python yt-dlp path includes `yt-dlp-ejs`; current YouTube
+downloads may also need `--js-runtimes node` when YouTube presents an EJS challenge.

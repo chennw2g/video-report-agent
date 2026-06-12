@@ -76,9 +76,11 @@ Transcript fallback:
   write a whisper.cpp comparison transcript by default.
 - Write `transcript.comparison.json` so downstream Codex can inspect timestamped disagreements instead of manually
   diffing full transcript files.
-- FunASR is installed as an optional experimental backend for later comparison on Chinese speech, punctuation,
-  speed, and speaker-related capabilities. Do not route normal provider transcription through FunASR until a
-  documented smoke test compares it with whisper.cpp on the same audio.
+- FunASR is installed as an optional experimental backend. A 2026-06-12 same-audio benchmark compared
+  Whisper large-v3-turbo, SenseVoiceSmall + fsmn-vad + cam++, and Paraformer-zh + fsmn-vad + ct-punc +
+  cam++ on a Chinese Bilibili video and an English YouTube video. Keep normal provider routing on
+  whisper.cpp for now; Paraformer-zh is the leading Chinese-speed candidate, while Whisper remains the
+  English/default-quality choice.
 
 YouTube chapter handling:
 
@@ -88,6 +90,9 @@ YouTube chapter handling:
   natural sections from transcript/slides and should not pretend those inferred sections are official chapters.
 - YouTube chapters are only as accurate as the platform/yt-dlp metadata. They may come from uploader-created
   chapters or platform-derived chapter metadata depending on the video.
+- On current YouTube, Python `yt-dlp` may need the official EJS challenge components. Keep
+  `yt-dlp[default]` in project dependencies and use `--js-runtimes node` when format extraction returns only
+  storyboard images with an `n challenge solving failed` warning.
 
 ## Bilibili
 

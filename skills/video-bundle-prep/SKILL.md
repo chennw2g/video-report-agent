@@ -23,8 +23,9 @@ This skill turns a video link, local video file, or existing bundle into a reusa
    - Do not hard-code a Whisper model in the skill. Local model selection belongs to the bundle engine and
      environment: `VIDEO_BUNDLE_AGENT_WHISPER_MODEL` / `WHISPER_MODEL` may override, otherwise the engine
      prefers installed turbo/large models before falling back to smaller models.
-   - FunASR may be installed as an optional experimental ASR backend, but do not treat it as the default
-     transcription path until a same-audio smoke comparison has been documented.
+   - FunASR may be installed as an optional experimental ASR backend. A same-audio benchmark exists, but do
+     not treat it as the default transcription path until provider-level selection and output normalization
+     are implemented.
 4. Read `manifest.json`, `diagnostics.json`, `metadata.json`, and transcript/transcription evidence.
 5. If transcript/transcription is missing, inspect diagnostics and report whether the source is invalid or the tool/provider failed. Do not continue to report preparation.
 6. Classify the video semantically from title, description, native source chapters, transcript, and user focus. Do not use keyword-count rules as the classifier.

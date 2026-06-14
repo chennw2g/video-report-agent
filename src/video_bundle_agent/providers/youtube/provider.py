@@ -17,7 +17,7 @@ from video_bundle_agent.diagnostics.models import DiagnosticLog
 from video_bundle_agent.media.ffmpeg import extract_audio_wav
 from video_bundle_agent.media.transcription import (
     build_transcript_payload,
-    transcribe_with_whisper_cpp,
+    transcribe_audio_for_language,
 )
 from video_bundle_agent.media.visual_recall import create_visual_recall_slides
 from video_bundle_agent.media.ytdlp import (
@@ -179,6 +179,7 @@ def _write_transcript_artifacts(
     language: str,
     transcript_source: str,
     model_path: Path | None = None,
+    language_detection: dict[str, Any] | None = None,
 ) -> None:
     transcript_payload = build_transcript_payload(
         source=source.model_dump(mode="json"),
@@ -186,6 +187,7 @@ def _write_transcript_artifacts(
         language=language,
         transcript_source=transcript_source,
         model_path=model_path,
+        language_detection=language_detection,
     )
     write_json(output_dir / "transcript.segments.json", transcript_payload)
     write_text(
@@ -194,6 +196,15 @@ def _write_transcript_artifacts(
     )
     artifacts.add("transcript_path", "transcript", "transcript.segments.json")
     artifacts.add("transcript_text_path", "transcript_text", "transcript.txt")
+
+
+def _jsonable_dict(value: dict[str, Any] | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    result: dict[str, Any] = {}
+    for key, item in value.items():
+        result[key] = str(item) if isinstance(item, Path) else item
+    return result
 
 
 def _write_transcript_alternative_artifacts(
@@ -207,15 +218,19 @@ def _write_transcript_alternative_artifacts(
     transcript_source: str,
     reason: str,
     model_path: Path | None = None,
+    language_detection: dict[str, Any] | None = None,
 ) -> None:
-    transcript_path = "transcript.whisper.segments.json"
-    transcript_text_path = "transcript.whisper.txt"
+    suffix = "funasr" if "funasr" in transcript_source.lower() else "whisper"
+    transcript_path = f"transcript.{suffix}.segments.json"
+    transcript_text_path = f"transcript.{suffix}.txt"
+    jsonable_language_detection = _jsonable_dict(language_detection)
     transcript_payload = build_transcript_payload(
         source=source.model_dump(mode="json"),
         segments=segments,
         language=language,
         transcript_source=transcript_source,
         model_path=model_path,
+        language_detection=jsonable_language_detection,
     )
     write_json(output_dir / transcript_path, transcript_payload)
     write_text(
@@ -236,6 +251,7 @@ def _write_transcript_alternative_artifacts(
                 "transcript_text_path": transcript_text_path,
                 "segment_count": len(segments),
                 "model_path": str(model_path) if model_path else None,
+                "language_detection": jsonable_language_detection,
             }
         ],
     }
@@ -245,7 +261,13 @@ def _write_transcript_alternative_artifacts(
         "transcript_alternatives",
         "transcript.alternatives.json",
     )
+    artifacts.add("transcript_local_path", "transcript_alternative", transcript_path)
     artifacts.add("transcript_whisper_path", "transcript_alternative", transcript_path)
+    artifacts.add(
+        "transcript_local_text_path",
+        "transcript_alternative_text",
+        transcript_text_path,
+    )
     artifacts.add(
         "transcript_whisper_text_path",
         "transcript_alternative_text",
@@ -266,7 +288,57 @@ def _subtitle_transcript_source(info: dict[str, Any]) -> str:
     return "yt_dlp_auto_subtitle"
 
 
-def _run_whisper_transcription(
+def _infer_local_transcription_language(
+    *,
+    info: dict[str, Any],
+    subtitle_language_hint: str,
+) -> str:
+    candidates = [
+        info.get("language"),
+        info.get("language_preference"),
+        info.get("channel_language"),
+        subtitle_language_hint,
+    ]
+    joined = " ".join(str(item).lower() for item in candidates if item)
+    if any(token in joined for token in ("zh", "chi", "chinese", "cmn", "yue")):
+        return "zh"
+    if "en" in joined or "english" in joined:
+        return "en"
+    return "auto"
+
+
+def _add_transcription_info_artifacts(
+    *,
+    output_dir: Path,
+    artifacts: BundleArtifacts,
+    transcription_info: dict[str, Any],
+) -> None:
+    raw_json_path = transcription_info.get("raw_json_path")
+    if isinstance(raw_json_path, Path):
+        artifacts.add(
+            "raw_transcription_json_path",
+            "raw_transcription",
+            raw_json_path.relative_to(output_dir).as_posix(),
+        )
+    language_detection = transcription_info.get("language_detection")
+    if isinstance(language_detection, dict):
+        sample_path = language_detection.get("sample_path")
+        if isinstance(sample_path, Path):
+            artifacts.add(
+                "language_probe_audio_path",
+                "raw_transcription",
+                sample_path.relative_to(output_dir).as_posix(),
+            )
+        raw_output_path = language_detection.get("raw_output_path")
+        if isinstance(raw_output_path, Path):
+            artifacts.add(
+                "language_probe_output_path",
+                "raw_transcription",
+                raw_output_path.relative_to(output_dir).as_posix(),
+            )
+
+
+def _run_local_transcription(
     *,
     source_url: str,
     source: SourceInfo,
@@ -274,6 +346,7 @@ def _run_whisper_transcription(
     artifacts: BundleArtifacts,
     raw_audio_dir: Path,
     raw_transcription_dir: Path,
+    language: str,
     cookies: Path | None,
     cookies_from_browser: str | None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -298,17 +371,16 @@ def _run_whisper_transcription(
         "raw_audio",
         wav_path.relative_to(output_dir).as_posix(),
     )
-    transcription_info, transcribed_segments = transcribe_with_whisper_cpp(
+    transcription_info, transcribed_segments = transcribe_audio_for_language(
         wav_path,
         raw_transcription_dir,
+        language=language,
     )
-    raw_json_path = transcription_info.get("raw_json_path")
-    if isinstance(raw_json_path, Path):
-        artifacts.add(
-            "raw_transcription_json_path",
-            "raw_transcription",
-            raw_json_path.relative_to(output_dir).as_posix(),
-        )
+    _add_transcription_info_artifacts(
+        output_dir=output_dir,
+        artifacts=artifacts,
+        transcription_info=transcription_info,
+    )
     return transcription_info, transcribed_segments
 
 
@@ -353,6 +425,8 @@ def _diagnose_transcription_failure(
     if isinstance(error, FileNotFoundError):
         message = str(error).lower()
         if "whisper.cpp cli" in message:
+            code = "TOOL_MISSING"
+        elif "funasr" in message:
             code = "TOOL_MISSING"
         elif "model" in message:
             code = "WHISPER_MODEL_MISSING"
@@ -449,6 +523,7 @@ def analyze_youtube(
     transcript_segments: list[dict[str, Any]] = []
     subtitle_unavailable = False
     manual_subtitles_available = False
+    subtitle_language_hint = ""
     if info is not None:
         try:
             manual_subtitles_available = _has_manual_subtitles(info)
@@ -460,6 +535,7 @@ def analyze_youtube(
                 cookies_from_browser=cookies_from_browser,
             )
             subtitle_file = select_subtitle_file(subtitle_files)
+            subtitle_language_hint = subtitle_file.name if subtitle_file else ""
             if subtitle_file:
                 transcript_segments = parse_subtitle(subtitle_file)
             if transcript_segments:
@@ -546,13 +622,18 @@ def analyze_youtube(
             )
             if should_transcribe:
                 try:
-                    transcription_info, transcribed_segments = _run_whisper_transcription(
+                    local_transcription_language = _infer_local_transcription_language(
+                        info=info,
+                        subtitle_language_hint=subtitle_language_hint,
+                    )
+                    transcription_info, transcribed_segments = _run_local_transcription(
                         source_url=source_url,
                         source=source,
                         output_dir=output_dir,
                         artifacts=artifacts,
                         raw_audio_dir=raw_audio_dir,
                         raw_transcription_dir=raw_transcription_dir,
+                        language=local_transcription_language,
                         cookies=cookies,
                         cookies_from_browser=cookies_from_browser,
                     )
@@ -567,9 +648,20 @@ def analyze_youtube(
                                 primary_transcript_path="transcript.segments.json",
                                 segments=transcribed_segments,
                                 language=str(transcription_info.get("language") or "auto"),
-                                transcript_source="whisper_cpp",
+                                transcript_source=str(
+                                    transcription_info.get("transcript_source")
+                                    or transcription_info.get("engine")
+                                    or "local_transcription"
+                                ),
                                 reason="auto_subtitle_comparison",
                                 model_path=model_path,
+                                language_detection=transcription_info.get(
+                                    "language_detection"
+                                )
+                                if isinstance(
+                                    transcription_info.get("language_detection"), dict
+                                )
+                                else None,
                             )
                             diagnostics.add(
                                 code="AUTO_SUBTITLE_COMPARISON",
@@ -577,7 +669,7 @@ def analyze_youtube(
                                 stage="audio_transcription",
                                 message=(
                                     "YouTube subtitles appear to be automatic; "
-                                    "a whisper.cpp comparison transcript was written."
+                                    "a local transcription comparison transcript was written."
                                 ),
                                 details={
                                     "transcript_alternatives_path": (
@@ -598,8 +690,19 @@ def analyze_youtube(
                                 source=source,
                                 segments=transcript_segments,
                                 language=str(transcription_info.get("language") or "auto"),
-                                transcript_source="whisper_cpp",
+                                transcript_source=str(
+                                    transcription_info.get("transcript_source")
+                                    or transcription_info.get("engine")
+                                    or "local_transcription"
+                                ),
                                 model_path=model_path,
+                                language_detection=transcription_info.get(
+                                    "language_detection"
+                                )
+                                if isinstance(
+                                    transcription_info.get("language_detection"), dict
+                                )
+                                else None,
                             )
                             capabilities.has_transcript = True
                     else:
@@ -607,7 +710,10 @@ def analyze_youtube(
                             code="TRANSCRIPTION_UNAVAILABLE",
                             severity="warning",
                             stage="audio_transcription",
-                            message="whisper.cpp did not produce usable transcript segments.",
+                            message=(
+                                "Local audio transcription did not produce usable "
+                                "transcript segments."
+                            ),
                         )
                 except Exception as error:  # noqa: BLE001
                     _diagnose_transcription_failure(diagnostics, error=error)

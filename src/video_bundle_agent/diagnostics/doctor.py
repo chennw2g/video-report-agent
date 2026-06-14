@@ -142,7 +142,6 @@ def run_doctor() -> DoctorReport:
         _check_executable("yt-dlp", required=True),
         _check_executable("tesseract", required=False),
         _check_executable("whisper", required=False, version_args=[]),
-        _check_python_module("faster-whisper", required=False),
         _check_importable_python_module("funasr", required=False),
         _check_python_module("xhs", required=False),
         _check_python_module("playwright", required=False),

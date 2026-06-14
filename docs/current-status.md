@@ -1,6 +1,6 @@
 # Current Status
 
-Last updated: 2026-06-12 17:22 +08:00
+Last updated: 2026-06-14 18:50 +08:00
 
 This file is the short project snapshot to read after context compaction. Update it after every material
 project change that affects capabilities, provider state, report contracts, validation status, known blockers,
@@ -23,12 +23,19 @@ external tool state, or recommended next steps.
 ## Git State
 
 - Current branch: `main`.
-- Current working tree: has active visual-selection-plan implementation and documentation edits; full pytest
-  and ruff pass as of this update.
+- Current working tree: has active ASR language-probe routing, CUDA whisper.cpp integration, and documentation
+  edits; full pytest and ruff pass as of the latest validation in this work session.
+- Latest validation in this work session:
+  - `uv run ruff check`: passed.
+  - `uv run pytest`: 58 passed.
+  - `uv run video-bundle-agent doctor`: warning only; FunASR and whisper.cpp are available, optional
+    `tesseract` is missing. `faster-whisper` is no longer part of the checked route.
 - Latest commits:
+  - `28d540c Add ASR benchmark tooling`
+  - `b8a66a8 Prefer turbo whisper model and add FunASR extra`
+  - `f374a36 Add plan-guided visual evidence selection`
   - `a0d28c0 Finalize Xiaohongshu MediaCrawler workflow and report visuals`
   - `79956e1 Fix report metric card label alignment`
-  - `5ea89ed Initial video bundle agent baseline`
 
 ## Provider State
 
@@ -67,12 +74,25 @@ external tool state, or recommended next steps.
 - `video-bundle-prep` now writes an agent-authored `visual_selection_plan.json` after classification and
   transcript reading. `select-evidence --plan` and `prepare-report --plan` use that plan to prefer semantic
   anchors before built-in keyword and timeline fallback selection.
-- Local whisper.cpp transcription now prefers installed turbo/large models by default, while still allowing
-  `VIDEO_BUNDLE_AGENT_WHISPER_MODEL` or `WHISPER_MODEL` to override the model path.
-- `D:\Workshop\whisper.cpp\models\ggml-large-v3-turbo.bin` is installed and should be the default
-  whisper.cpp model when no environment override is set.
-- FunASR is installed as an optional experimental ASR extra with CUDA PyTorch for future Chinese transcription
-  comparison; it is not yet the default provider transcription backend.
+- Local transcription is language-aware:
+  - The provider first cuts a short 16 kHz WAV probe and runs whisper.cpp language detection against actual
+    speech audio.
+  - Detected Chinese routes to FunASR Paraformer-zh + fsmn-vad + ct-punc + cam++.
+  - Detected English and other non-Chinese languages route to whisper.cpp.
+  - Platform metadata, title language, and subtitle language are fallback hints only when audio probing fails
+    or returns low confidence.
+  - YouTube automatic-subtitle comparison uses the same language-aware local transcription selector.
+- FunASR speaker output is preserved as anonymous `speaker` cluster ids when `sentence_info[].spk` is present.
+- Whisper.cpp model selection remains configurable through `VIDEO_BUNDLE_AGENT_WHISPER_MODEL` or
+  `WHISPER_MODEL`. The current local CUDA build makes `ggml-large-v3-turbo.bin` the preferred
+  English/other-language quality-and-speed path when CUDA is available; Whisper base remains a CPU-only speed
+  fallback candidate.
+- Whisper.cpp language detection has its own lightweight model preference. `VIDEO_BUNDLE_AGENT_WHISPER_LANGUAGE_MODEL`
+  or `WHISPER_LANGUAGE_MODEL` may override it; otherwise the engine prefers installed `ggml-base.bin`.
+- Active whisper.cpp CLI path is now the CUDA build:
+  `D:\Workshop\whisper.cpp\v1.8.6-cuda\Release\whisper-cli.exe`.
+- CUDA build notes are recorded in `docs/whisper-cuda-build-20260614.md`.
+- The old CPU release is preserved at `D:\Workshop\whisper.cpp\v1.8.6\Release`.
 
 ## Xiaohongshu Current Finding
 
@@ -263,12 +283,74 @@ The provider records these as `PERMISSION_REQUIRED` or `COOKIE_REQUIRED` diagnos
   - Installed project Python dependency `yt-dlp[default]` so PyPI yt-dlp includes `yt-dlp-ejs`. YouTube format
     extraction for `AOEr5FrW-lY` required `--js-runtimes node`; without EJS it returned only storyboard
     images and `n challenge solving failed`.
+  - Follow-up comparison against YouTube official captions on `AOEr5FrW-lY` stripped JSON3 HTML tags before
+    tokenization and produced: Whisper large-v3-turbo WER 2.01% (56 suspected token errors),
+    SenseVoiceSmall WER 11.32% (315), Paraformer-zh WER 21.09% (587). This confirms Whisper remains the
+    English/default-quality path, while the Chinese-oriented FunASR models are not suitable as English primary.
+  - Additional Whisper base English follow-up used the already-installed `ggml-base.bin`: 94.42 seconds,
+    RTF 0.076, WER 2.23% (62 suspected token errors) against the same official captions. This makes Whisper
+    base the current English speed candidate, while turbo remains the quality candidate.
+  - Quantized Whisper turbo q5_0 follow-up used `ggml-large-v3-turbo-q5_0.bin`: 977.07 seconds, RTF 0.789,
+    WER 2.44% (68 suspected token errors). On the current CPU-only whisper.cpp build, q5_0 is smaller but
+    slower than unquantized turbo and not competitive with Whisper base.
+  - Fixed ASR benchmark FunASR normalization so `sentence_info[].spk` is preserved as `speaker` in standard
+    segments. A Bilibili Paraformer speaker-check run produced 1,323 segments with anonymous speaker-cluster
+    counts: `0` = 369, `1` = 942, `2` = 6, `3` = 6.
+  - The Chinese Bilibili source did not expose an authoritative subtitle in benchmark artifacts, so Chinese
+    accuracy remains reference-free: Paraformer-zh is still the most usable Chinese candidate by speed and
+    punctuation, but proper nouns/domain terms need a flagged comparison route before production defaulting.
+  - The Bilibili ASR benchmark audio was an ad hoc same-audio extraction for model comparison, not a production
+    provider workflow run. Normal Bilibili analysis remains `bilibili-api-python` primary with `yt-dlp` only
+    as fallback.
+- Latest ASR language-routing update on 2026-06-13 14:14 +08:00:
+  - Added a pre-transcription language probe: the engine cuts a short 16 kHz WAV sample, runs whisper.cpp
+    `--detect-language`, and uses the detected speech language to choose FunASR for Chinese or whisper.cpp
+    for non-Chinese audio.
+  - Platform metadata, title language, and subtitle language are now fallback hints rather than the primary
+    routing source. They are also used when the probe returns a low-confidence language. This avoids
+    misrouting Bilibili/YouTube/Xiaohongshu videos whose spoken language differs from title or platform metadata.
+  - Language-probe artifacts are retained in the bundle manifest when available:
+    `language_probe_audio_path` and `language_probe_output_path`.
+  - `transcript.segments.json` can include a `language_detection` object with engine, detected language,
+    confidence, `accepted`, probe duration, sample path, model path, and raw output path.
+  - Language-probe smoke on existing benchmark audio detected `zh` with confidence `0.997134` for
+    `bilibili_16k.wav` and `en` with confidence `0.981981` for `youtube_16k.wav`.
+  - Removed `faster-whisper` from `doctor`; it is not an adopted route because the project is staying with
+    official whisper.cpp plus FunASR.
+  - Synced `skills/video-bundle-prep/SKILL.md` to
+    `C:\Users\chenn\.codex\skills\video-bundle-prep\SKILL.md`; SHA256 hashes match.
+  - Validation: `uv run pytest` passed with 57 tests, `uv run ruff check` passed, and
+    `uv run video-bundle-agent doctor` returned warning only for missing optional `tesseract`.
+- Latest whisper.cpp CUDA build on 2026-06-14 18:50 +08:00:
+  - Installed Visual Studio Build Tools 2022 C++ toolchain and Windows SDK 10.0.26100.0.
+  - Installed CMake 3.25.0 and Ninja 1.13.0 into the project `.venv` with `uv pip install cmake ninja`.
+  - Built official `ggml-org/whisper.cpp` tag `v1.8.6` from source at
+    `D:\Workshop\whisper.cpp\src-v1.8.6`, with `GGML_CUDA=ON`, `GGML_CUDA_NCCL=OFF`, and
+    `CMAKE_CUDA_ARCHITECTURES=120`. CMake converted this to `120a` for the RTX 5060 Laptop GPU.
+  - CUDA Toolkit was assembled from NVIDIA official 13.2.1 redist packages under
+    `D:\Workshop\CUDA\v13.2.1-redist`; this avoids replacing the system CUDA/PATH globally.
+  - Packaged CUDA runtime is at `D:\Workshop\whisper.cpp\v1.8.6-cuda\Release`.
+  - `src/video_bundle_agent/tools/paths.py` now prefers
+    `D:\Workshop\whisper.cpp\v1.8.6-cuda\Release\whisper-cli.exe` before the old CPU release.
+  - Synced updated `skills/video-bundle-prep/SKILL.md` to
+    `C:\Users\chenn\.codex\skills\video-bundle-prep\SKILL.md`; SHA256 hashes match.
+  - Direct CUDA smoke detected `NVIDIA GeForce RTX 5060 Laptop GPU`, compute capability `12.0`, and used
+    `CUDA0` backend. The 60-second Chinese language probe detected `zh` with confidence about `0.997`.
+  - Full English same-audio benchmark on `outputs/asr-benchmark-20260612/youtube_16k.wav` with
+    `ggml-large-v3-turbo.bin` completed in `38.19` seconds for `1238.04` seconds of audio, RTF `0.03085`.
+    WER against the YouTube official JSON3 subtitle was `1.29%` (`36` token errors over `2,783` reference
+    tokens). Prior CPU turbo result was `802.58` seconds, RTF `0.648`, WER `2.01%`.
+  - Output benchmark directory:
+    `outputs/asr-benchmark-20260614-gpu-whisper/youtube_turbo_gpu/`.
+  - Validation: `find_executable("whisper")` resolves to the CUDA release; `uv run video-bundle-agent doctor`
+    reports the CUDA release path and only warns for missing optional `tesseract`; `uv run pytest` passed with
+    58 tests and `uv run ruff check` passed.
 - Latest general audit on 2026-06-11 13:57 +08:00:
   - `git status --short --branch`: clean `main`.
   - `uv run pytest`: 48 passed.
   - `uv run ruff check`: passed.
   - `uv run video-bundle-agent doctor`: warning only. Required tools are available; optional `tesseract`
-    and `faster-whisper` are missing.
+    was missing. The old faster-whisper optional check has since been removed.
   - Global `C:\Users\chenn\.codex\skills\video-bundle-prep` and `video-report` matched the project skill
     files by hash.
   - Existing readiness checks:
@@ -292,10 +374,10 @@ The provider records these as `PERMISSION_REQUIRED` or `COOKIE_REQUIRED` diagnos
 ## Known Gaps
 
 - `tesseract` is not installed. OCR remains optional in the current phase.
-- `faster-whisper` is not installed as a Python module. Current production local transcription uses installed
-  `whisper.cpp` CLI at `D:\Workshop\whisper.cpp\v1.8.6\Release\whisper-cli.exe`.
-- FunASR benchmark output is available, but it is not yet wired as a normal provider backend or model-selection
-  option.
+- `faster-whisper` is intentionally not used or checked. Current production local transcription uses installed
+  `whisper.cpp` CLI at `D:\Workshop\whisper.cpp\v1.8.6\Release\whisper-cli.exe` plus FunASR for Chinese.
+- English Whisper default model choice still needs a GPU-enabled whisper.cpp benchmark before finalizing
+  whether speed (`base`) or quality (`large-v3-turbo`) is the normal non-Chinese path.
 - The full Codex plugin shell is still deferred.
 - Copying selected screenshots into `screenshots/selected/`, OCR-based slide filtering, complex visual
   deduplication, sharpness/brightness scoring, and agent-assisted final body-image placement remain future

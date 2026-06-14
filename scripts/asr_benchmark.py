@@ -116,19 +116,24 @@ def _write_outputs(
 
 def _normalize_funasr_item(item: dict[str, Any], run_id: str) -> list[dict[str, Any]]:
     text = str(item.get("text") or "").strip()
-    raw_timestamp = item.get("timestamp") or item.get("sentence_info") or []
+    raw_sentence_info = item.get("sentence_info") or []
+    raw_timestamp = item.get("timestamp") or raw_sentence_info or []
     segments: list[dict[str, Any]] = []
 
-    if isinstance(raw_timestamp, list) and raw_timestamp:
-        for index, raw in enumerate(raw_timestamp):
+    if isinstance(raw_sentence_info, list) and raw_sentence_info:
+        for index, raw in enumerate(raw_sentence_info):
             if not isinstance(raw, dict):
                 continue
             start = float(raw.get("start") or raw.get("start_ms") or 0) / 1000
             end = float(raw.get("end") or raw.get("end_ms") or start * 1000) / 1000
-            segment_text = str(raw.get("text") or "").strip()
+            segment_text = _clean_transcript_text(
+                str(raw.get("text") or raw.get("sentence") or "").strip()
+            )
             if not segment_text:
                 continue
-            speaker = raw.get("spk") or raw.get("speaker")
+            speaker = raw.get("spk")
+            if speaker is None:
+                speaker = raw.get("speaker")
             segments.append(
                 {
                     "id": f"{run_id}_{index}",
@@ -265,7 +270,6 @@ def _run_whisper(
     source: dict[str, Any],
     language: str,
 ) -> dict[str, Any]:
-    run_id = "whisper_large_v3_turbo"
     start = time.perf_counter()
     info, segments = transcribe_with_whisper_cpp(
         audio_path,
@@ -273,6 +277,11 @@ def _run_whisper(
         language=language,
     )
     finished_at = time.perf_counter()
+    model_path = Path(str(info.get("model_path") or "whisper_cpp"))
+    model_name = model_path.stem
+    if model_name.startswith("ggml-"):
+        model_name = model_name.removeprefix("ggml-")
+    run_id = f"whisper_{model_name.replace('-', '_')}"
     duration = _audio_duration(audio_path)
     timings = {
         "run_id": run_id,

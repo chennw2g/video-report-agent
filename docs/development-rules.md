@@ -287,17 +287,40 @@ These rules keep `video-bundle-agent` focused on producing reliable, inspectable
 - `video-report` must not write a substantive content report from metadata or comments alone.
 - A substantive report requires transcript or audio transcription, plus screenshots, slides, or keyframes.
 - If platform subtitles are unavailable, the provider should attempt local audio transcription from retained working audio before the skill gives up on the source.
-- If platform subtitles are automatic rather than manual/official, the provider should retain the platform transcript as primary and create a whisper.cpp comparison transcript by default.
+- If platform subtitles are automatic rather than manual/official, the provider should retain the platform transcript as primary and create a language-aware local transcription comparison transcript by default.
 - When a comparison transcript exists, write `transcript.comparison.json` to highlight timestamped disagreements and technical-term differences without using an LLM.
 - `--force-transcription` is a development smoke-test option only. Normal report runs must not force local transcription when platform subtitles are usable.
 - `--no-compare-auto-subtitles` may disable the automatic-subtitle comparison path for faster diagnostics-only runs.
+- Local transcription engine choice is language-aware and should be based on actual speech audio when possible.
+  Before full local transcription, extract a short 16 kHz WAV probe and run whisper.cpp language detection.
+  Detected Chinese should default to FunASR Paraformer-zh + fsmn-vad + ct-punc + cam++; detected English and
+  other non-Chinese languages should default to whisper.cpp. Platform metadata, title language, and subtitle
+  language are fallback hints only when probing fails or returns a low-confidence language.
 - Local whisper.cpp model choice must not be hard-coded by the skill. The engine should respect
-  `VIDEO_BUNDLE_AGENT_WHISPER_MODEL` or `WHISPER_MODEL` first, then prefer installed turbo/large models before
-  falling back to medium, small, and base models.
-- FunASR is an optional experimental ASR backend. Same-audio benchmark coverage exists for one Chinese
-  Bilibili video and one English YouTube video. Do not make it the default provider route yet: use the
-  benchmark result as guidance only, with Paraformer-zh as the current Chinese-speed candidate and Whisper
-  large-v3-turbo as the English/default-quality choice.
+  `VIDEO_BUNDLE_AGENT_WHISPER_MODEL` or `WHISPER_MODEL` first. The exact default Whisper model remains a
+  local performance decision and should be revisited after a GPU-enabled Whisper benchmark.
+- The language-probe whisper.cpp model is separately configurable through
+  `VIDEO_BUNDLE_AGENT_WHISPER_LANGUAGE_MODEL` or `WHISPER_LANGUAGE_MODEL`; prefer `ggml-base.bin` by default
+  when available so language routing stays fast.
+- FunASR is the current default Chinese local-transcription backend. Same-audio benchmark coverage exists for
+  one Chinese Bilibili video and one English YouTube video: Paraformer-zh is the Chinese default candidate,
+  Whisper large-v3-turbo is the current English/non-Chinese default when the CUDA whisper.cpp build is
+  available, and Whisper base is only a CPU-only speed fallback candidate.
+- FunASR speaker output should preserve `sentence_info[].spk` as an anonymous `speaker` cluster id when
+  available. Do not treat these ids as real speaker names without a separate identification step.
+- Quantized Whisper models must be benchmarked on the actual local backend before being preferred. On the
+  current CPU-only whisper.cpp build, turbo q5_0 is smaller but slower than unquantized turbo and slower
+  than Whisper base.
+- Whisper GPU acceleration uses the local CUDA whisper.cpp build at
+  `D:\Workshop\whisper.cpp\v1.8.6-cuda\Release\whisper-cli.exe`. The old CPU release is preserved at
+  `D:\Workshop\whisper.cpp\v1.8.6\Release`. Build details and rollback notes are in
+  `docs/whisper-cuda-build-20260614.md`.
+- The English same-audio benchmark on 2026-06-14 ran `ggml-large-v3-turbo.bin` on the CUDA build in
+  38.19 seconds for 1238.04 seconds of audio, RTF 0.03085. Treat older CPU turbo timing as obsolete for the
+  current machine unless the workflow explicitly falls back to the CPU release.
+- Same-audio ASR benchmarks may use ad hoc media extraction for controlled comparison, but benchmark notes
+  must label that route clearly. Do not treat an ad hoc benchmark download path as evidence that the normal
+  provider workflow has changed.
 - YouTube yt-dlp calls should support the current EJS challenge path. Keep the Python dependency on
   `yt-dlp[default]`; when format extraction returns only storyboard images plus `n challenge solving failed`,
   retry with a supported JS runtime such as `--js-runtimes node`.

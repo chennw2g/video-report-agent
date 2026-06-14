@@ -8,3 +8,11 @@ def test_workshop_node_is_preferred_before_path_candidates() -> None:
 
     assert candidates[0] == WORKSHOP_ROOT / "NodeJS" / "node.exe"
     assert Path("WindowsApps") not in candidates[0].parts
+
+
+def test_cuda_whisper_is_preferred_before_cpu_release() -> None:
+    candidates = candidate_paths("whisper")
+
+    assert candidates[0] == (
+        WORKSHOP_ROOT / "whisper.cpp" / "v1.8.6-cuda" / "Release" / "whisper-cli.exe"
+    )

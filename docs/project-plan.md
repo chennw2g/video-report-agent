@@ -100,14 +100,14 @@ Each bundle should contain:
 - `screenshots/candidates/` output.
 - `slides.json` output.
 - `bundle.json` `slides_path` and `capabilities.has_slides`.
-- YouTube basic provider for metadata, subtitles/transcript, audio transcription fallback, bounded comments,
+- YouTube basic provider for metadata, subtitles/transcript, language-aware audio transcription fallback,
   audience feedback, retained working video/audio, and optional visual recall.
 - Staged frame extraction command for existing bundles.
 - Bilibili API-first provider: `bilibili-api-python` for metadata, BV/AV/CID/page info, top-liked
-  comments, optional danmaku, API playurl media download, retained working video/audio, transcription
+  comments, optional danmaku, API playurl media download, retained working video/audio, Chinese FunASR transcription
   fallback, screenshots, and diagnostics; `yt-dlp` remains fallback only when API metadata or media fails.
 - Xiaohongshu basic provider: URL/short-link resolution, explicit cookies, HTML note extraction,
-  media URL normalization/download, video transcription, visual recall, and MediaCrawler-only bounded
+  media URL normalization/download, Chinese FunASR video transcription, visual recall, and MediaCrawler-only bounded
   top-level comments through MediaCrawler's official `xhs detail` jsonl workflow. Observed account/session
   risk responses such as `300011` are recorded as `PERMISSION_REQUIRED`; comments remain optional evidence
   and must not block the main content bundle.
@@ -116,12 +116,15 @@ Each bundle should contain:
 ## Implementation Order
 
 1. Implement YouTube stage-1 collection: metadata, subtitles/transcript, bounded comments, audience feedback,
-   a 1080p-or-best-available working video, whisper.cpp audio transcription fallback when subtitles are missing,
-   whisper.cpp comparison transcripts when only automatic subtitles are available, and deterministic transcript
+   a 1080p-or-best-available working video, language-aware audio transcription fallback when subtitles are missing,
+   local transcription comparison transcripts when only automatic subtitles are available, and deterministic transcript
    comparison output for report-time inspection.
-   Whisper.cpp model selection is local and configurable; installed turbo/large models should be preferred over
-   small fallback models unless the user sets an explicit model path. FunASR is an optional experimental ASR
-   backend for later Chinese transcription comparison, not the default provider path yet.
+   Before full local transcription, extract a short 16 kHz audio probe and run whisper.cpp language detection;
+   detected Chinese routes to FunASR Paraformer-zh + fsmn-vad + ct-punc + cam++, while detected English and other
+   non-Chinese languages route to whisper.cpp. Platform or subtitle language hints are fallback only when the
+   probe cannot determine a language or returns low confidence. Whisper.cpp model selection is local and
+   configurable; on the current workstation, the CUDA whisper.cpp build plus `ggml-large-v3-turbo.bin` is the
+   preferred English/other-language path.
 2. Let the Video Report Skill read stage-1 text evidence, classify the video, write `content_profile.json`, and choose
    the visual recall policy.
 3. Implement staged visual recall through `extract-frames`: `ffprobe`, fixed/keyword/scene candidates, screenshots,

@@ -7,3 +7,10 @@ def test_doctor_reports_required_tool_names() -> None:
 
     assert {"python", "uv", "ffmpeg", "ffprobe", "yt-dlp"}.issubset(names)
     assert report.status in {"ok", "warning", "error"}
+
+
+def test_doctor_does_not_report_unused_faster_whisper() -> None:
+    report = run_doctor()
+    names = {tool.name for tool in report.tools}
+
+    assert "faster-whisper" not in names

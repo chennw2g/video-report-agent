@@ -20,12 +20,21 @@ This skill turns a video link, local video file, or existing bundle into a reusa
    - Xiaohongshu: lightweight metadata/media provider plus MediaCrawler-only bounded comments.
    - Local video: local media workflow.
 3. Run stage-1 collection with transcript/transcription evidence, bounded comments when requested, retained working media, no screenshots yet, and no LLM calls.
-   - Do not hard-code a Whisper model in the skill. Local model selection belongs to the bundle engine and
-     environment: `VIDEO_BUNDLE_AGENT_WHISPER_MODEL` / `WHISPER_MODEL` may override, otherwise the engine
-     prefers installed turbo/large models before falling back to smaller models.
-   - FunASR may be installed as an optional experimental ASR backend. A same-audio benchmark exists, but do
-     not treat it as the default transcription path until provider-level selection and output normalization
-     are implemented.
+   - Local transcription is language-aware:
+     - Before full local transcription, the bundle engine cuts a short 16 kHz WAV probe and runs whisper.cpp
+       language detection on actual speech audio.
+     - Detected Chinese uses FunASR Paraformer-zh + fsmn-vad + ct-punc + cam++ by default.
+     - Detected English and other non-Chinese languages use whisper.cpp by default.
+     - Platform metadata, title language, and subtitle language are fallback hints only when audio probing fails
+       or returns low confidence.
+   - Do not hard-code a Whisper model in the skill. Whisper model selection belongs to the bundle engine and
+     environment: `VIDEO_BUNDLE_AGENT_WHISPER_MODEL` / `WHISPER_MODEL` may override. On the current
+     workstation, the bundle engine prefers the CUDA whisper.cpp release and `ggml-large-v3-turbo.bin` for
+     English and other non-Chinese local transcription; Whisper base is only a CPU fallback candidate.
+   - Do not hard-code the language-probe model either. The bundle engine may use
+     `VIDEO_BUNDLE_AGENT_WHISPER_LANGUAGE_MODEL` / `WHISPER_LANGUAGE_MODEL`; otherwise it prefers a lightweight
+     multilingual model such as `ggml-base.bin` when installed.
+   - FunASR speaker labels are anonymous voice-cluster ids when available, not real speaker names.
 4. Read `manifest.json`, `diagnostics.json`, `metadata.json`, and transcript/transcription evidence.
 5. If transcript/transcription is missing, inspect diagnostics and report whether the source is invalid or the tool/provider failed. Do not continue to report preparation.
 6. Classify the video semantically from title, description, native source chapters, transcript, and user focus. Do not use keyword-count rules as the classifier.

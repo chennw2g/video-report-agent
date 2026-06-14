@@ -24,7 +24,7 @@ from video_bundle_agent.diagnostics.models import DiagnosticLog
 from video_bundle_agent.media.ffmpeg import extract_audio_wav
 from video_bundle_agent.media.transcription import (
     build_transcript_payload,
-    transcribe_with_whisper_cpp,
+    transcribe_audio_for_language,
 )
 from video_bundle_agent.media.visual_recall import create_visual_recall_slides
 from video_bundle_agent.tools.process import CommandError, run_command
@@ -741,6 +741,7 @@ def _write_transcript_artifacts(
     language: str,
     transcript_source: str,
     model_path: Path | None = None,
+    language_detection: dict[str, Any] | None = None,
 ) -> None:
     transcript_payload = build_transcript_payload(
         source=source.model_dump(mode="json"),
@@ -748,6 +749,7 @@ def _write_transcript_artifacts(
         language=language,
         transcript_source=transcript_source,
         model_path=model_path,
+        language_detection=language_detection,
     )
     write_json(output_dir / "transcript.segments.json", transcript_payload)
     write_text(
@@ -756,6 +758,37 @@ def _write_transcript_artifacts(
     )
     artifacts.add("transcript_path", "transcript", "transcript.segments.json")
     artifacts.add("transcript_text_path", "transcript_text", "transcript.txt")
+
+
+def _add_transcription_info_artifacts(
+    *,
+    output_dir: Path,
+    artifacts: BundleArtifacts,
+    transcription_info: dict[str, Any],
+) -> None:
+    raw_json_path = transcription_info.get("raw_json_path")
+    if isinstance(raw_json_path, Path):
+        artifacts.add(
+            "raw_transcription_json_path",
+            "raw_transcription",
+            raw_json_path.relative_to(output_dir).as_posix(),
+        )
+    language_detection = transcription_info.get("language_detection")
+    if isinstance(language_detection, dict):
+        sample_path = language_detection.get("sample_path")
+        if isinstance(sample_path, Path):
+            artifacts.add(
+                "language_probe_audio_path",
+                "raw_transcription",
+                sample_path.relative_to(output_dir).as_posix(),
+            )
+        raw_output_path = language_detection.get("raw_output_path")
+        if isinstance(raw_output_path, Path):
+            artifacts.add(
+                "language_probe_output_path",
+                "raw_transcription",
+                raw_output_path.relative_to(output_dir).as_posix(),
+            )
 
 
 def _transcribe_working_video(
@@ -775,14 +808,16 @@ def _transcribe_working_video(
         "raw_audio",
         wav_path.relative_to(output_dir).as_posix(),
     )
-    transcription_info, segments = transcribe_with_whisper_cpp(wav_path, raw_transcription_dir)
-    raw_json_path = transcription_info.get("raw_json_path")
-    if isinstance(raw_json_path, Path):
-        artifacts.add(
-            "raw_transcription_json_path",
-            "raw_transcription",
-            raw_json_path.relative_to(output_dir).as_posix(),
-        )
+    transcription_info, segments = transcribe_audio_for_language(
+        wav_path,
+        raw_transcription_dir,
+        language="zh",
+    )
+    _add_transcription_info_artifacts(
+        output_dir=output_dir,
+        artifacts=artifacts,
+        transcription_info=transcription_info,
+    )
     if segments:
         model_path = transcription_info.get("model_path")
         model_path = model_path if isinstance(model_path, Path) else None
@@ -792,8 +827,15 @@ def _transcribe_working_video(
             source=source,
             segments=segments,
             language=str(transcription_info.get("language") or "auto"),
-            transcript_source="whisper_cpp",
+            transcript_source=str(
+                transcription_info.get("transcript_source")
+                or transcription_info.get("engine")
+                or "local_transcription"
+            ),
             model_path=model_path,
+            language_detection=transcription_info.get("language_detection")
+            if isinstance(transcription_info.get("language_detection"), dict)
+            else None,
         )
     return segments
 
@@ -1045,7 +1087,7 @@ def analyze_xiaohongshu(
                     code="TRANSCRIPTION_UNAVAILABLE",
                     severity="warning",
                     stage="audio_transcription",
-                    message="whisper.cpp did not produce usable transcript segments.",
+                    message="Local audio transcription did not produce usable transcript segments.",
                 )
         except Exception as error:  # noqa: BLE001
             _diagnose_failure(

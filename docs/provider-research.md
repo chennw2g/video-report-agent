@@ -66,21 +66,28 @@ Transcript fallback:
 - Try yt-dlp subtitles / automatic subtitles first.
 - If no usable subtitle is available, download a bounded working audio file.
 - Convert the audio to 16 kHz mono WAV with ffmpeg.
-- Transcribe with local whisper.cpp when available.
+- Use language-aware local transcription:
+  - First cut a short 16 kHz WAV probe and run whisper.cpp language detection on actual speech audio.
+  - Detected Chinese (`zh`, `zh-Hans`, `cmn`, `yue`, etc.): FunASR Paraformer-zh + fsmn-vad + ct-punc + cam++.
+  - Detected English and other non-Chinese languages: local whisper.cpp.
+  - Platform metadata, title language, and subtitle language are fallback hints only when audio probing fails
+    or returns low confidence.
 - whisper.cpp model choice is local and configurable. `VIDEO_BUNDLE_AGENT_WHISPER_MODEL` or `WHISPER_MODEL`
-  overrides all defaults; otherwise the engine prefers installed `large-v3-turbo` / turbo variants before
-  falling back to large, medium, small, and base models.
+  overrides all Whisper defaults. On the current workstation, the CUDA whisper.cpp build is active and
+  `ggml-large-v3-turbo.bin` is the preferred English/other-language default. Whisper base remains a CPU-only
+  speed fallback candidate.
+- whisper.cpp language detection uses a separate lightweight model preference. `VIDEO_BUNDLE_AGENT_WHISPER_LANGUAGE_MODEL`
+  or `WHISPER_LANGUAGE_MODEL` may override it; otherwise prefer `ggml-base.bin` when installed.
 - If the local transcription tool or model is missing, write diagnostics instead of inventing transcript text.
 - Keep forced local transcription behind an explicit development option; do not enable it by default.
 - If yt-dlp reports only automatic captions and no manual subtitles, keep the platform transcript as primary and
-  write a whisper.cpp comparison transcript by default.
+  write a language-aware local transcription comparison transcript by default.
 - Write `transcript.comparison.json` so downstream Codex can inspect timestamped disagreements instead of manually
   diffing full transcript files.
-- FunASR is installed as an optional experimental backend. A 2026-06-12 same-audio benchmark compared
-  Whisper large-v3-turbo, SenseVoiceSmall + fsmn-vad + cam++, and Paraformer-zh + fsmn-vad + ct-punc +
-  cam++ on a Chinese Bilibili video and an English YouTube video. Keep normal provider routing on
-  whisper.cpp for now; Paraformer-zh is the leading Chinese-speed candidate, while Whisper remains the
-  English/default-quality choice.
+- FunASR is installed and promoted to the default Chinese local-transcription backend. A 2026-06-12 same-audio
+  benchmark compared Whisper large-v3-turbo/base/q5_0, SenseVoiceSmall + fsmn-vad + cam++, and
+  Paraformer-zh + fsmn-vad + ct-punc + cam++ on one Chinese Bilibili video and one English YouTube video.
+  Paraformer-zh is the Chinese default; Whisper remains the English/other-language backend.
 
 YouTube chapter handling:
 

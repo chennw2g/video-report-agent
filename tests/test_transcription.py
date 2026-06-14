@@ -2,7 +2,12 @@ import json
 from pathlib import Path
 
 from video_bundle_agent.media.transcription import (
+    _accept_detected_language,
+    _normalize_funasr_item,
+    _parse_whisper_detect_language_output,
+    is_chinese_language,
     parse_whisper_cpp_json,
+    whisper_cpp_language_model_candidates,
     whisper_cpp_model_candidates,
     whisper_output_path,
 )
@@ -79,3 +84,68 @@ def test_whisper_model_candidates_allow_environment_override(monkeypatch, tmp_pa
     monkeypatch.setenv("VIDEO_BUNDLE_AGENT_WHISPER_MODEL", str(custom_model))
 
     assert whisper_cpp_model_candidates()[0] == custom_model
+
+
+def test_whisper_language_model_candidates_prefer_base_before_turbo() -> None:
+    names = [path.name for path in whisper_cpp_language_model_candidates()]
+
+    assert names.index("ggml-base.bin") < names.index("ggml-large-v3-turbo.bin")
+
+
+def test_parse_whisper_detect_language_output_with_confidence() -> None:
+    language, confidence = _parse_whisper_detect_language_output(
+        "whisper_full_with_state: auto-detected language: zh (p = 0.997134)"
+    )
+
+    assert language == "zh"
+    assert confidence == 0.997134
+
+
+def test_parse_whisper_detect_language_output_without_match() -> None:
+    language, confidence = _parse_whisper_detect_language_output("no language here")
+
+    assert language is None
+    assert confidence is None
+
+
+def test_accept_detected_language_requires_language_and_reasonable_confidence() -> None:
+    assert _accept_detected_language("zh", 0.997)
+    assert _accept_detected_language("en", None)
+    assert not _accept_detected_language("zh", 0.12)
+    assert not _accept_detected_language(None, 0.99)
+
+
+def test_is_chinese_language_detects_common_language_hints() -> None:
+    assert is_chinese_language("zh")
+    assert is_chinese_language("zh-Hans")
+    assert is_chinese_language("Chinese")
+    assert not is_chinese_language("en")
+    assert not is_chinese_language("auto")
+
+
+def test_normalize_funasr_item_preserves_zero_speaker() -> None:
+    segments = _normalize_funasr_item(
+        {
+            "sentence_info": [
+                {
+                    "text": " hello ",
+                    "start": 1000,
+                    "end": 2500,
+                    "spk": 0,
+                }
+            ]
+        },
+        "funasr_paraformer_zh",
+    )
+
+    assert segments == [
+        {
+            "id": "funasr_paraformer_zh_0",
+            "start": 1.0,
+            "end": 2.5,
+            "duration": 1.5,
+            "text": "hello",
+            "speaker": "0",
+            "source": "funasr_paraformer_zh",
+        }
+    ]

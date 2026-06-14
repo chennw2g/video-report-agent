@@ -46,6 +46,7 @@ def candidate_paths(tool: str) -> list[Path]:
             Path("C:/Program Files/Tesseract-OCR/tesseract.exe"),
         ],
         "whisper": [
+            WORKSHOP_ROOT / "whisper.cpp" / "v1.8.6-cuda" / "Release" / "whisper-cli.exe",
             WORKSHOP_ROOT / "whisper.cpp" / "v1.8.6" / "Release" / "whisper-cli.exe",
             WORKSHOP_ROOT / "whisper.cpp" / "Release" / "whisper-cli.exe",
         ],

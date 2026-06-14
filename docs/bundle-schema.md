@@ -124,6 +124,53 @@ Known `chapter_source` values:
 - `bilibili_player_v2.view_points`
 - `yt_dlp.chapters`
 
+## transcript.segments.json
+
+`transcript.segments.json` records the primary transcript or local transcription used by reports. When local
+audio transcription is used, the payload may include `language_detection` so the engine choice is auditable.
+
+```json
+{
+  "source": {
+    "platform": "bilibili",
+    "source_id": "BV...",
+    "source_url": "https://www.bilibili.com/video/BV...",
+    "resolved_url": "https://www.bilibili.com/video/BV..."
+  },
+  "fetched_at": "2026-06-13T00:00:00+00:00",
+  "language": "zh",
+  "transcript_source": "funasr_paraformer_zh",
+  "model_path": null,
+  "language_detection": {
+    "engine": "whisper_cpp_detect_language",
+    "language": "zh",
+    "confidence": 0.997134,
+    "accepted": true,
+    "duration_seconds": 60,
+    "sample_path": "raw/transcription/video.16k.language_probe.wav",
+    "model_path": "D:/Workshop/whisper.cpp/models/ggml-base.bin",
+    "raw_output_path": "raw/transcription/video.16k.language_probe.txt"
+  },
+  "segments": [
+    {
+      "id": "funasr_paraformer_zh_0",
+      "start": 0.0,
+      "end": 2.4,
+      "duration": 2.4,
+      "text": "example transcript text",
+      "speaker": "0",
+      "source": "funasr_paraformer_zh"
+    }
+  ]
+}
+```
+
+Language detection is based on a short audio probe, not only on platform metadata or title language. Platform
+or subtitle language hints are fallback inputs when probing fails or when the detected language has low
+confidence. If the accepted probe detects Chinese, the local transcription engine should use FunASR
+Paraformer-zh + fsmn-vad + ct-punc + cam++; otherwise it should use whisper.cpp. Retain
+`language_probe_audio_path` and `language_probe_output_path` in `manifest.json` when available.
+
 ## manifest.json
 
 `manifest.json` lists every bundle file and keeps command provenance. `command` is the latest operation that
@@ -166,9 +213,10 @@ followed by `extract_frames` or `compare_transcripts`.
 }
 ```
 
-When platform subtitles are automatic, the bundle may include `transcript.alternatives.json` plus a
-`transcript.whisper.segments.json` comparison transcript. The primary `transcript.segments.json` stays the
-provider transcript unless subtitles are missing or the run explicitly forces transcription.
+When platform subtitles are automatic, the bundle may include `transcript.alternatives.json` plus a local
+transcription comparison transcript such as `transcript.whisper.segments.json` or
+`transcript.funasr.segments.json`. The primary `transcript.segments.json` stays the provider transcript unless
+subtitles are missing or the run explicitly forces transcription.
 
 `transcript.comparison.json` is a deterministic, non-LLM comparison between the primary transcript and the first
 alternative transcript. It aligns transcript text in time windows, records text similarity, highlights technical

@@ -236,34 +236,43 @@ slides, or OCR must be recorded in `diagnostics.json` rather than invented.
 `video-report` requires both transcript/transcription and screenshots/keyframes before writing
 a substantive report. YouTube stage-1 collection downloads a 1080p-or-best-available working video so screenshots
 can be extracted later after Codex classifies the video; if subtitles are unavailable, it can also download working
-audio, convert it with ffmpeg, and transcribe with local whisper.cpp. `--visual-strategy auto` uses fixed-interval
+audio, convert it with ffmpeg, and transcribe with the language-aware local engine: Chinese uses FunASR
+Paraformer-zh + fsmn-vad + ct-punc + cam++, while English and other non-Chinese languages use whisper.cpp.
+The engine does not rely only on platform metadata or title language: before full local transcription, it
+cuts a short 16 kHz WAV probe and runs whisper.cpp language detection. The detected speech language routes
+Chinese audio to FunASR and non-Chinese audio to whisper.cpp; platform/subtitle language hints are fallback
+only when detection fails or returns low confidence.
+`--visual-strategy auto` uses fixed-interval
 frames for `low`, fixed plus keyword-trigger frames for `medium`, and fixed plus keyword plus scene-change frames
 for `high`. Candidate screenshots are uncapped by default; use a positive `--max-screenshots` only when
 time or disk space matters more than complete visual coverage.
 
-For development smoke tests, `--force-transcription` can exercise the local whisper.cpp path even when yt-dlp
+For development smoke tests, `--force-transcription` can exercise the local transcription path even when yt-dlp
 subtitles exist. It is disabled by default and should not be used for normal report runs.
 
-Whisper model selection is local and configurable. Set `VIDEO_BUNDLE_AGENT_WHISPER_MODEL` or `WHISPER_MODEL`
-to force a specific model file. Without an override, the engine prefers installed turbo/large whisper.cpp
-models, then falls back through medium, small, and base. The current workstation has
-`D:\Workshop\whisper.cpp\models\ggml-large-v3-turbo.bin` installed.
+Whisper model selection is local and configurable for English and other non-Chinese transcription. Set
+`VIDEO_BUNDLE_AGENT_WHISPER_MODEL` or `WHISPER_MODEL` to force a specific model file. On this workstation,
+the active whisper.cpp CLI is the CUDA build at
+`D:\Workshop\whisper.cpp\v1.8.6-cuda\Release\whisper-cli.exe`; `ggml-large-v3-turbo.bin` is the current
+English/other-language default when that CUDA build is available. Whisper base remains a CPU-only speed
+fallback candidate.
 
-FunASR can be installed with the optional extra for Chinese ASR comparison:
+Language detection uses its own lightweight whisper.cpp model preference. Set
+`VIDEO_BUNDLE_AGENT_WHISPER_LANGUAGE_MODEL` or `WHISPER_LANGUAGE_MODEL` to override it; otherwise the engine
+prefers `ggml-base.bin` when available so the probe remains fast.
+
+FunASR can be installed with the optional extra and is the default Chinese local-transcription backend:
 
 ```powershell
 uv sync --extra funasr
 ```
 
-It remains experimental for normal provider routing. A 2026-06-12 benchmark compared Whisper
-large-v3-turbo, SenseVoiceSmall, and Paraformer-zh on one Chinese Bilibili video and one English YouTube
-video. Paraformer-zh was fastest and most report-friendly on Chinese speech; Whisper large-v3-turbo was
-clearly best for English. Do not make FunASR the default backend until provider-level selection and output
-normalization are implemented.
+The current default Chinese route is Paraformer-zh + fsmn-vad + ct-punc + cam++. Speaker labels, when
+available, are anonymous voice-cluster ids rather than real names.
 
-When yt-dlp only finds automatic subtitles, normal YouTube runs also create a whisper.cpp comparison transcript
-by default. Disable that extra work with `--no-compare-auto-subtitles` when speed matters more than transcript
-cross-checking.
+When yt-dlp only finds automatic subtitles, normal YouTube runs also create a language-aware local
+transcription comparison transcript by default. Disable that extra work with `--no-compare-auto-subtitles`
+when speed matters more than transcript cross-checking.
 
 Automatic-subtitle comparison also writes `transcript.comparison.json`, a timestamped diff summary that highlights
 technical-term disagreements such as `computer` vs `compute`.

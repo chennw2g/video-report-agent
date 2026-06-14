@@ -266,7 +266,7 @@ def analyze(
         typer.Option(
             "--compare-auto-subtitles/--no-compare-auto-subtitles",
             help=(
-                "Run a local whisper.cpp comparison transcript when yt-dlp only "
+                "Run a language-aware local transcription comparison when yt-dlp only "
                 "finds automatic subtitles."
             ),
         ),

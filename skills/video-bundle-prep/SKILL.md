@@ -46,12 +46,17 @@ This skill turns a video link, local video file, or existing bundle into a reusa
 7. When the provider exposes native chapters, write them to `source_chapters.json` and record
    `source_chapters_path` in `bundle.json`; Bilibili `metadata.pages` is only pages/parts, not progress-bar chapters.
    Current native chapter sources are Bilibili player `view_points` and YouTube yt-dlp `chapters`.
+   Bilibili platform subtitles come from the same player information path (`subtitle.subtitles` /
+   `Video.get_subtitle()`); use them before local transcription when available. If the selected Bilibili
+   subtitle is automatic, keep it as the primary transcript and let the provider write a local transcription
+   comparison transcript, the same policy used for YouTube automatic subtitles.
    Xiaohongshu currently has no reliable native chapter source, so use natural sections later in report writing.
 8. Write `<bundle-dir>/content_profile.json` with `primary_type`, `type_tags`, rationale, and selected visual policy.
 9. Write `<bundle-dir>/visual_selection_plan.json` with semantic anchors, dynamic terms, time hints, and
-   per-anchor `need_screenshot` decisions. The agent decides what visual evidence matters; the tool only
-   matches those pointers against transcript timestamps and candidate screenshots.
-10. Run `video-bundle-agent extract-frames <bundle-dir>` using the visual policy.
+   per-anchor `need_screenshot` decisions. The agent decides what visual evidence matters; the tool uses
+   those pointers for coarse baseline sampling plus targeted semantic-anchor screenshots.
+10. Run `video-bundle-agent extract-frames <bundle-dir> --plan visual_selection_plan.json` using the visual
+   policy.
 11. Run `video-bundle-agent check-bundle <bundle-dir>`.
 12. If `report_ready` is false, report blockers and repair steps instead of preparing final report inputs.
 13. Run `video-bundle-agent select-evidence <bundle-dir> --plan visual_selection_plan.json`.
@@ -106,12 +111,24 @@ Add this only when the note HTML/media request needs an exported Xiaohongshu coo
 Do not start the old dedicated `9231` CDP browser path for normal Xiaohongshu runs. Do not use `xhs-signer`,
 `--xhs-sign-url`, or `XHS_SIGN_URL`; that local signer path is no longer supported.
 
+For local video files, use the same staged prep shape. There are no platform comments, online engagement
+metrics, or native chapters unless separately supplied, so the core evidence is local transcription plus
+screenshots/keyframes:
+
+```powershell
+uv run video-bundle-agent analyze "<local-video-path>" `
+  --out outputs/<safe-name> `
+  --visual-recall none `
+  --no-llm
+```
+
 After classification:
 
 ```powershell
 uv run video-bundle-agent extract-frames outputs/<safe-name> `
   --visual-recall <low|medium|high> `
   --visual-strategy <auto|fixed|keyword|scene|all> `
+  --plan visual_selection_plan.json `
   --max-candidate-screenshots 0
 
 uv run video-bundle-agent check-bundle outputs/<safe-name>
@@ -119,7 +136,10 @@ uv run video-bundle-agent select-evidence outputs/<safe-name> --max-images 12 --
 uv run video-bundle-agent prepare-report outputs/<safe-name> --max-images 12 --plan visual_selection_plan.json
 ```
 
-`--max-candidate-screenshots 0` means no candidate cap. Keep candidate visual coverage complete; report rendering can choose fewer images later.
+When `--plan visual_selection_plan.json` is present, `--max-candidate-screenshots 0` means keep all
+coarse baseline frames and all semantic-anchor frames. Do not use old full high/all interval coverage as
+the default, because long high-density videos can create hundreds of low-value candidates before the agent
+has identified the moments that matter.
 
 ## Classification
 
@@ -129,7 +149,9 @@ Suggested visual policy:
 
 - Low visual density, such as solo podcast, interview, talk show: `visual_recall=low`, `visual_strategy=fixed`.
 - Medium visual density, such as speech, lecture, meeting, product intro: `visual_recall=medium`, `visual_strategy=auto`.
-- High visual density, such as news, tutorial, software demo, finance charts, data-rich deep analysis: `visual_recall=high`, `visual_strategy=all`, `max_screenshots=0`.
+- High visual density, such as news, tutorial, software demo, finance charts, data-rich deep analysis:
+  `visual_recall=high`, `visual_strategy=auto`, `max_screenshots=0`, plus a detailed
+  `visual_selection_plan.json`.
 
 Write:
 
@@ -141,9 +163,9 @@ Write:
   "rationale": "The transcript repeatedly explains on-screen steps and UI operations.",
   "visual_policy": {
     "visual_recall": "high",
-    "visual_strategy": "all",
+    "visual_strategy": "auto",
     "max_screenshots": 0,
-    "reason": "The report needs complete candidate coverage around UI changes and transcript cues."
+    "reason": "The report needs coarse visual coverage plus targeted screenshots around UI changes and transcript cues."
   }
 }
 ```
@@ -157,6 +179,12 @@ moments where screenshots may be useful.
 Do not create a generic keyword list only. The anchors should reflect this specific video: result screens,
 tool settings, chart changes, visual comparisons, chapter transitions, data tables, UI states, examples, or
 other moments where image evidence improves understanding.
+
+Use keyword-level semantic cues as pointers, not as the whole plan. When the transcript says things like
+"看这里", "这个表格", "点击这里", "设置", "结果", "风险", "对比", "第一步", or domain-specific terms such as
+"估值", "现金流", "仓位", or "财报", inspect the surrounding timestamp and decide whether that moment needs
+a screenshot. If yes, write a semantic anchor with a concrete `time_hints` range. The Python tool then turns
+that anchor into one or more deterministic ffmpeg screenshots; it does not decide the meaning by itself.
 
 For low-visual-variation videos such as pure talking-head, solo podcast, or interview, set
 `body_screenshot_policy` to `selective` and mark most anchors as `need_screenshot=false`; keep only a hero or
@@ -187,6 +215,7 @@ Recommended shape:
 Then pass it to both evidence commands:
 
 ```powershell
+uv run video-bundle-agent extract-frames outputs/<safe-name> --plan visual_selection_plan.json
 uv run video-bundle-agent select-evidence outputs/<safe-name> --max-images 12 --plan visual_selection_plan.json
 uv run video-bundle-agent prepare-report outputs/<safe-name> --max-images 12 --plan visual_selection_plan.json
 ```

@@ -106,14 +106,15 @@ YouTube chapter handling:
 Primary combination: `Nemo2011/bilibili-api` (`bilibili-api-python`) + `yt-dlp` fallback.
 
 Current implementation stage: `bilibili-api-python` primary provider with bounded top-liked comments,
-optional danmaku, API playurl media download, local transcription, and `yt-dlp` fallback only when
-the API path cannot produce enough media/metadata.
+optional danmaku, player subtitle extraction, API playurl media download, local transcription fallback,
+and `yt-dlp` fallback only when the API path cannot produce enough media/metadata.
 
 `bilibili-api-python` responsibilities:
 
 - BV / AV / CID / part detection
 - metadata, stats, thumbnail, and UP information
 - native player chapters through player `view_points` when available
+- platform subtitles through player `subtitle.subtitles` / `Video.get_subtitle()`
 - bounded top-liked comments
 - optional danmaku only when explicitly requested
 - playurl/DASH media URLs for local video/audio download
@@ -124,7 +125,9 @@ API media download responsibilities:
 - Select a 1080p-or-best-available video stream and best available audio stream.
 - Download DASH video/audio with `httpx` and Bilibili referer headers.
 - Mux video/audio with ffmpeg into a retained working video under `raw/media/`.
-- Use retained audio for whisper.cpp transcription when subtitles are unavailable.
+- Use retained audio for language-aware local transcription when subtitles are unavailable.
+- If only automatic subtitles are available, keep the platform transcript as primary and write a local
+  transcription comparison transcript, matching the YouTube automatic-subtitle policy.
 - Use retained working video for fixed/keyword/scene visual recall through the shared frame extractor.
 
 `yt-dlp` fallback responsibilities:

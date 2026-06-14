@@ -58,8 +58,10 @@ is worth deeper study.
 
 Default sections:
 
-1. Basic information: title, platform, author/uploader, publish time, duration, link, video type tags,
-   view count when available, and like count when available.
+1. Basic information: title, platform, author/uploader, publish time, duration, link, and video type tags.
+   Header metric cards must use this fixed order: `平台`, `作者`, `发布时间`, `视频时长`, `播放量`,
+   `评论数`, `点赞数`, `分享数`. If a metric is unavailable, show `未获取`; do not substitute share
+   count for like count or any other engagement metric.
 2. AI multi-dimensional evaluation snapshot: render the compact rating graphic before the video overview
    so the reader sees AI's overall judgment immediately. Do not put detailed per-dimension reasoning here.
 3. Video overview: concise description of what the video covers, including complete original chapters from
@@ -96,7 +98,9 @@ Goal: adapt the report to the video type. Deep is not just a longer quick report
 
 Default sections:
 
-1. Basic information and source context.
+1. Basic information and source context. Header metric cards must use the same fixed order as `quick`:
+   `平台`, `作者`, `发布时间`, `视频时长`, `播放量`, `评论数`, `点赞数`, `分享数`. Do not add a
+   report-type card by default and do not replace a missing metric with another metric.
 2. AI multi-dimensional evaluation snapshot: render the compact rating graphic before the video overview
    so the reader sees AI's overall judgment immediately. Keep detailed rating reasoning for the later
    AI critique section.
@@ -195,6 +199,7 @@ Source-type adaptation:
 - `deep` may include AI-organized tables, diagrams, flowcharts, comparison charts, matrices, or timelines
   when they clarify the video content.
 - AI-organized visuals must be useful, not decorative.
+- Tables in content maps and AI-organized modules should center each column by default for visual consistency.
 - Do not force AI-organized visuals into tables. Choose the form that fits the content: process flow,
   timeline, matrix, comparison table, axis chart, or concise diagram.
 - Label them as `AI 整理` or `AI 解读`.
@@ -220,6 +225,9 @@ Source-type adaptation:
 - Both modes may include a lightweight `注意事项` module near the end.
 - This module merges source cautions, diagnostic/trust notes, and report limitations. It is not a raw tool
   log.
+- User-facing attention notes must be in Chinese. Do not expose raw diagnostic codes such as
+  `MEDIA_DOWNLOAD_FAILED` as the visible title; translate or summarize them and keep raw codes traceable in
+  `diagnostics.json` or the evidence index.
 - Include only items that materially affect interpretation, such as:
   - automatic-subtitle vs transcription disagreement that affects key terms, names, numbers, or claims
   - missing or partial comments

@@ -383,6 +383,8 @@ def apply_candidate_cap(
 def _filename_reason(source_reasons: list[str]) -> str:
     if "fixed_interval" in source_reasons:
         return "fixed"
+    if "semantic_anchor" in source_reasons:
+        return "anchor"
     if "scene_change" in source_reasons:
         return "scene"
     if "keyword_trigger" in source_reasons:

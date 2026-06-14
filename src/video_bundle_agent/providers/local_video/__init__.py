@@ -1,1 +1,1 @@
-"""Local video provider skeleton."""
+"""Local video provider."""

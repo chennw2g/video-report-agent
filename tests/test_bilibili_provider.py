@@ -4,6 +4,8 @@ from typing import Any
 
 from video_bundle_agent.providers.bilibili.provider import (
     _load_bilibili_credential,
+    _parse_bilibili_subtitle_segments,
+    _select_bilibili_subtitle_track,
     analyze_bilibili,
 )
 
@@ -35,6 +37,41 @@ def test_load_bilibili_credential_from_netscape_cookies(tmp_path: Path) -> None:
     assert credential.buvid4 == "buvid-four"
     assert credential.dedeuserid == "123"
     assert credential.ac_time_value == "refresh"
+
+
+def test_select_and_parse_bilibili_subtitle_track() -> None:
+    subtitle = {
+        "subtitles": [
+            {
+                "lan": "en",
+                "lan_doc": "English",
+                "subtitle_url": "//example.test/en.json",
+            },
+            {
+                "lan": "ai-zh",
+                "lan_doc": "中文（自动生成）",
+                "subtitle_url": "//example.test/zh.json",
+            },
+        ]
+    }
+
+    track = _select_bilibili_subtitle_track(subtitle)
+    segments = _parse_bilibili_subtitle_segments(
+        {"body": [{"from": 1.2, "to": 3.4, "content": "这里是字幕"}]},
+        transcript_source="bilibili_auto_subtitle",
+    )
+
+    assert track is not None
+    assert track["lan"] == "ai-zh"
+    assert segments == [
+        {
+            "id": "00000",
+            "start": 1.2,
+            "end": 3.4,
+            "text": "这里是字幕",
+            "source": "bilibili_auto_subtitle",
+        }
+    ]
 
 
 def test_analyze_bilibili_basic_provider_writes_bundle(
@@ -264,3 +301,119 @@ def test_analyze_bilibili_basic_provider_writes_bundle(
     assert source_chapters["items"][0]["title"] == "Opening workflow"
     assert manifest["command"]["provider_stage"] == "bilibili_api_primary"
     assert manifest["command"]["max_danmaku"] == 0
+
+
+def test_analyze_bilibili_uses_auto_subtitle_and_writes_comparison(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    async def fake_fetch_api_video_context(**kwargs: Any) -> tuple[Any, dict[str, Any], list, int]:
+        del kwargs
+        return (
+            object(),
+            {
+                "bvid": "BVauto",
+                "aid": 321,
+                "cid": 654,
+                "title": "Bilibili subtitle example",
+                "duration": 20,
+                "pubdate": 1_700_000_000,
+                "owner": {"mid": 10, "name": "UP"},
+                "stat": {"view": 20, "like": 2, "reply": 0},
+            },
+            [{"cid": 654, "page": 1, "part": "P1"}],
+            654,
+        )
+
+    async def fake_fetch_api_player_v2(**kwargs: Any) -> dict[str, Any]:
+        assert kwargs["cid"] == 654
+        return {
+            "code": 0,
+            "data": {
+                "subtitle": {
+                    "subtitles": [
+                        {
+                            "lan": "ai-zh",
+                            "lan_doc": "中文（自动生成）",
+                            "subtitle_url": "//example.test/auto.json",
+                        }
+                    ]
+                },
+                "view_points": [],
+            },
+        }
+
+    async def fake_fetch_api_download_url(**kwargs: Any) -> dict[str, Any]:
+        assert kwargs["cid"] == 654
+        return {"dash": {"video": [{"base_url": "v", "height": 720}], "audio": [{"base_url": "a"}]}}
+
+    def fake_download_bilibili_subtitle_json(**kwargs: Any) -> dict[str, Any]:
+        assert kwargs["track"]["lan"] == "ai-zh"
+        return {"body": [{"from": 0.0, "to": 2.0, "content": "平台自动字幕"}]}
+
+    def fake_download_api_working_media(**kwargs: Any) -> tuple[Path, Path]:
+        output_dir = kwargs["output_dir"]
+        output_dir.mkdir(parents=True, exist_ok=True)
+        video_path = output_dir / "BVauto.api.mp4"
+        audio_path = output_dir / "BVauto.audio.m4s"
+        video_path.write_bytes(b"fake api video")
+        audio_path.write_bytes(b"fake api audio")
+        return video_path, audio_path
+
+    def fake_transcribe_existing_audio(
+        **kwargs: Any,
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        assert kwargs["audio_path"].name == "BVauto.audio.m4s"
+        return (
+            {"language": "zh", "transcript_source": "funasr_paraformer_zh", "model_path": None},
+            [{"start": 0.0, "end": 2.0, "text": "本地转录字幕"}],
+        )
+
+    monkeypatch.setattr(
+        "video_bundle_agent.providers.bilibili.provider._fetch_api_video_context",
+        fake_fetch_api_video_context,
+    )
+    monkeypatch.setattr(
+        "video_bundle_agent.providers.bilibili.provider._fetch_api_player_v2",
+        fake_fetch_api_player_v2,
+    )
+    monkeypatch.setattr(
+        "video_bundle_agent.providers.bilibili.provider._fetch_api_download_url",
+        fake_fetch_api_download_url,
+    )
+    monkeypatch.setattr(
+        "video_bundle_agent.providers.bilibili.provider._download_bilibili_subtitle_json",
+        fake_download_bilibili_subtitle_json,
+    )
+    monkeypatch.setattr(
+        "video_bundle_agent.providers.bilibili.provider._download_api_working_media",
+        fake_download_api_working_media,
+    )
+    monkeypatch.setattr(
+        "video_bundle_agent.providers.bilibili.provider._transcribe_existing_audio",
+        fake_transcribe_existing_audio,
+    )
+
+    result = analyze_bilibili(
+        "https://www.bilibili.com/video/BVauto",
+        tmp_path,
+        visual_recall="none",
+    )
+
+    bundle = json.loads((tmp_path / "bundle.json").read_text(encoding="utf-8"))
+    transcript = json.loads((tmp_path / "transcript.segments.json").read_text(encoding="utf-8"))
+    alternatives = json.loads(
+        (tmp_path / "transcript.alternatives.json").read_text(encoding="utf-8")
+    )
+    comparison = json.loads((tmp_path / "transcript.comparison.json").read_text(encoding="utf-8"))
+    diagnostics = json.loads((tmp_path / "diagnostics.json").read_text(encoding="utf-8"))
+
+    assert result["capabilities"]["has_transcript"] is True
+    assert bundle["transcript_path"] == "transcript.segments.json"
+    assert bundle["transcript_alternatives_path"] == "transcript.alternatives.json"
+    assert bundle["transcript_comparison_path"] == "transcript.comparison.json"
+    assert transcript["transcript_source"] == "bilibili_auto_subtitle"
+    assert transcript["segments"][0]["text"] == "平台自动字幕"
+    assert alternatives["items"][0]["reason"] == "auto_subtitle_comparison"
+    assert comparison["comparison"]["window_count"] >= 1
+    assert any(record["code"] == "AUTO_SUBTITLE_COMPARISON" for record in diagnostics["records"])

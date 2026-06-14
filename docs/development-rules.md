@@ -51,13 +51,16 @@ These rules keep `video-bundle-agent` focused on producing reliable, inspectable
 - YouTube should produce metadata, transcript/subtitles or audio transcription, screenshots/keyframes, bounded comments, audience feedback, diagnostics, bundle index, and manifest.
 - Visual recall is a phase-1 requirement for report-skill readiness.
 - Bilibili uses a Bilibili workflow directly: `bilibili-api-python` is primary for BV/AV/CID/page
-  metadata, bounded top-liked comments, optional danmaku, and API playurl media download; `yt-dlp`
-  is fallback only when API metadata or media fails.
+  metadata, player subtitles, bounded top-liked comments, optional danmaku, and API playurl media download;
+  `yt-dlp` is fallback only when API metadata or media fails.
 - Xiaohongshu uses a lightweight provider boundary first: explicit cookies, HTML note extraction,
   media URL normalization/download, local video transcription, visual recall, and MediaCrawler-only bounded
   top-level comments. MediaCrawler is a managed external runtime for Xiaohongshu comments, not a vendored
   Python package inside `src/`.
-- Local video may remain a skeleton until ffprobe, transcription, OCR, and frame extraction are deliberately scoped.
+- Local video is a baseline provider, not a skeleton: it imports the local media file, reads ffprobe metadata,
+  runs language-aware local audio transcription, can extract screenshots/keyframes, writes audience-feedback
+  absence explicitly, and produces the normal bundle/readiness artifacts. It does not invent platform
+  metadata, comments, chapters, or online engagement fields.
 - The phase-1 skill may be minimal, but its intended workflow is to call the bundle engine from a user-supplied link or file and then produce a report from the bundle.
 
 ## Implementation Order
@@ -154,19 +157,23 @@ These rules keep `video-bundle-agent` focused on producing reliable, inspectable
 - Do not cite every sentence, but important conclusions must be traceable to bundle evidence. Avoid
   paper-style footnote clutter unless the user explicitly asks for that style.
 - Reports must distinguish source material from AI interpretation. Use lightweight labels such as
-  `????`, `AI ??`, `????`, and `????` when useful, but do not label every sentence.
+  `视频内容`, `AI 解读`, `观众反馈`, and `注意事项` when useful, but do not label every sentence.
 - AI-organized tables, charts, diagrams, risk notes, and evaluation should be presented as AI
   interpretation, not as source claims.
 - `quick` should not add AI-made charts beyond the fixed multi-dimensional evaluation by default.
 - `deep` may add AI-organized tables, diagrams, flowcharts, comparison charts, matrices, or timelines
-  when they clarify the source. Label them as `AI ??` or `AI ??`, and keep their basis traceable
+  when they clarify the source. Label them as `AI 整理` or `AI 解读`, and keep their basis traceable
   to bundle evidence. Do not present them as original video screenshots or author-provided charts.
+- Content maps and AI-organized tables should center each column by default for visual consistency.
 - Keep an evidence index at the end of both modes. `quick` lists key bundle files only; `deep` may list
   key screenshots, transcript/comparison files, cited comment files, and relevant diagnostics.
 - Reports may include a lightweight `注意事项` module near the end. It should not dump raw tool logs; include
   only source cautions, diagnostics, and report limits that materially affect interpretation, such as
   transcript disagreement, missing or partial comments, missing visual evidence, OCR absence for
   screen-text-heavy videos, or platform permission/risk controls.
+- User-facing diagnostic notes must be written in Chinese. Do not expose raw diagnostic codes such as
+  `MEDIA_DOWNLOAD_FAILED` as visible report titles; translate or summarize them and keep the raw code
+  traceable in `diagnostics.json` or the evidence index.
 - Blocking diagnostic issues should stop substantive report writing and produce repair steps. Non-blocking
   diagnostic issues should be concise.
 
@@ -285,8 +292,10 @@ These rules keep `video-bundle-agent` focused on producing reliable, inspectable
 - `quick` default sections: basic information, AI multi-dimensional evaluation snapshot, video overview,
   core points with inline visual evidence when useful, AI critique, audience feedback, and
   attention notes/evidence.
-- Basic information should include title, platform, author/uploader, publish time, duration, link, video
-  type tags, view count when available, and like count when available.
+- Basic information should include title, platform, author/uploader, publish time, duration, link, and video
+  type tags. Header metric cards must use this exact order: `平台`, `作者`, `发布时间`, `视频时长`,
+  `播放量`, `评论数`, `点赞数`, `分享数`. If a metric is unavailable, show `未获取`; do not
+  substitute share count for like count or any other engagement metric.
 - The quick video overview should concisely describe what the video covers and include the complete
   source chapter/section structure. Do not force it into a one-sentence conclusion.
 - `deep` default sections: basic information, AI multi-dimensional evaluation snapshot, video overview
@@ -305,8 +314,8 @@ These rules keep `video-bundle-agent` focused on producing reliable, inspectable
 - `report.input.json` must be generated after semantic classification and frame extraction. It is not an input
   to the classification step and does not replace `content_profile.json`.
 - `visual_selection_plan.json` is written by the prep agent after classification and transcript reading, then
-  passed to `select-evidence --plan` and `prepare-report --plan`. It is the bridge between semantic intent
-  and deterministic screenshot matching.
+  passed to `extract-frames --plan`, `select-evidence --plan`, and `prepare-report --plan`. It is the bridge
+  between semantic intent and deterministic screenshot extraction/matching.
 - `report.input.json` is an index into evidence. The final report workflow must still read the full transcript
   through `transcript.txt` or `transcript.segments.json` before writing mode-specific report content JSON.
 - Report rendering should refuse suspected encoding-damaged content by default, especially JSON that shows
@@ -323,6 +332,9 @@ These rules keep `video-bundle-agent` focused on producing reliable, inspectable
 - A substantive report requires transcript or audio transcription, plus screenshots, slides, or keyframes.
 - If platform subtitles are unavailable, the provider should attempt local audio transcription from retained working audio before the skill gives up on the source.
 - If platform subtitles are automatic rather than manual/official, the provider should retain the platform transcript as primary and create a language-aware local transcription comparison transcript by default.
+- Bilibili follows the same subtitle principle as YouTube: use platform/manual subtitles when available,
+  compare automatic subtitles against local transcription when automatic subtitles are the primary
+  transcript, and use local transcription as primary only when platform subtitles are unavailable or unusable.
 - When a comparison transcript exists, write `transcript.comparison.json` to highlight timestamped disagreements and technical-term differences without using an LLM.
 - `--force-transcription` is a development smoke-test option only. Normal report runs must not force local transcription when platform subtitles are usable.
 - `--no-compare-auto-subtitles` may disable the automatic-subtitle comparison path for faster diagnostics-only runs.
@@ -385,16 +397,17 @@ These rules keep `video-bundle-agent` focused on producing reliable, inspectable
 - Phase 1 must implement `fixed_interval` screenshot extraction with `ffprobe` and `ffmpeg`.
 - The bundle engine should support `--visual-recall none|low|medium|high`, defaulting to `medium`.
 - `video-bundle-prep` should use `--visual-recall none` for stage-1 collection, classify the video, then run `extract-frames`.
-- `low` means one screenshot every 15 seconds.
-- `medium` means one screenshot every 5 seconds.
-- `high` means one screenshot every 2 seconds.
-- Candidate screenshot collection should prioritize complete visual coverage over small artifact counts.
-- Default `max_screenshots` is `0`, meaning no candidate cap. A positive value is an explicit
-  performance/storage limit for constrained runs.
-- If interval extraction exceeds a positive `max_screenshots`, sample timestamps evenly across the video
+- Without an agent plan, `low` means one screenshot every 15 seconds, `medium` every 5 seconds, and `high`
+  every 2 seconds.
+- With `visual_selection_plan.json`, `extract-frames --plan` should use coarse baseline sampling plus
+  semantic-anchor screenshots instead of old high/all full fixed-interval coverage. Current coarse intervals
+  are `low=30s`, `medium=15s`, and `high=8s`, with plan time hints adding targeted frames.
+- Default `max_screenshots` is `0`, meaning no cap on the planned coarse+anchor candidate set. A positive
+  value is an explicit performance/storage limit for constrained runs.
+- If extraction exceeds a positive `max_screenshots`, sample timestamps evenly while preserving focus frames
   and record `VISUAL_COVERAGE_TRUNCATED` in diagnostics.
-- Record candidate caps, unlimited mode, coverage completeness, sampling, and skipped candidate counts in
-  `slides.json.extraction`.
+- Record candidate caps, planned/coarse sampling, coverage, semantic-anchor counts, and skipped candidate
+  counts in `slides.json.extraction`.
 - Screenshot candidates belong under `screenshots/candidates/`; later selected screenshots belong under `screenshots/selected/`.
 - `slides.json` is the normalized visual index and should be listed through `bundle.json.slides_path`.
 - The bundle engine may generate many screenshot candidates; `video-report` should not read every image by default.

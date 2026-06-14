@@ -138,7 +138,8 @@ comment rules, label text, or content depth. Those rules belong to the content c
 - Screenshots/media: use bordered image cards with a lower-emphasis caption area. Preserve screenshot
   readability and avoid decorative filters.
 - Charts/tables: use simple radar charts, clean tables, and restrained generated visual components that
-  match the same card style.
+  match the same card style. Table columns should be visually centered by default, especially content maps
+  and AI-organized tables.
 - Badges/status: badges may visually distinguish information roles with stable color tokens, but the exact
   badge text and role taxonomy come from the content contract and report content, not from this visual style.
 - Header text discipline: write the title, tags, and metric values so the default desktop hero stays compact.
@@ -146,7 +147,9 @@ comment rules, label text, or content depth. Those rules belong to the content c
   can fit naturally without truncation. The renderer may auto-reduce title and metric font sizes to fit, but
   it must not hide key text with clipping or ellipses. Prefer shorter wording plus smaller fixed font classes
   over hidden text.
-- Header metric cards keep labels such as `平台`, `频道`, and `发布时间` anchored in the bottom label area.
+- Header metric cards use this exact order: `平台`, `作者`, `发布时间`, `视频时长`, `播放量`, `评论数`,
+  `点赞数`, `分享数`. Do not add a report-type card by default. Keep metric labels anchored in the
+  bottom label area.
   Auto-shrinking the metric value must not move the label line out of alignment with neighboring cards.
 - PDF/mobile: hide or collapse navigation when needed and preserve readable single-column body flow.
 - Long PNG export: hide the left navigation and capture only the main report body.
@@ -183,7 +186,16 @@ Use this shape; omit only sections that are genuinely unavailable:
   "summary": "",
   "conclusion": "",
   "tags": [],
-  "metrics": [{"label": "", "value": ""}],
+  "metrics": [
+    {"label": "平台", "value": ""},
+    {"label": "作者", "value": ""},
+    {"label": "发布时间", "value": ""},
+    {"label": "视频时长", "value": ""},
+    {"label": "播放量", "value": "number|未获取"},
+    {"label": "评论数", "value": "number|未获取"},
+    {"label": "点赞数", "value": "number|未获取"},
+    {"label": "分享数", "value": "number|未获取"}
+  ],
   "evaluation": {
     "scale": {"min": 1, "max": 5},
     "dimensions": [
@@ -247,7 +259,9 @@ Use this shape; omit only sections that are genuinely unavailable:
 Use this structure for `quick` unless the user asks otherwise:
 
 1. Basic information: title, author, platform, publish time, duration, link, and video type tags.
-   Include view count and like count when available.
+   Header metric cards must use the fixed order `平台 / 作者 / 发布时间 / 视频时长 / 播放量 / 评论数 /
+   点赞数 / 分享数`. If a value is unavailable, show `未获取`; do not substitute one engagement metric
+   for another.
 2. AI multi-dimensional evaluation snapshot: render the compact rating visual before the video overview
    so the reader sees the overall AI judgment immediately. Label it as AI evaluation. Do not put
    per-dimension reasoning beside the chart.
@@ -271,6 +285,9 @@ Use this structure for `quick` unless the user asks otherwise:
 Use this structure for `deep` unless the user asks otherwise:
 
 1. Basic information and source context.
+   Header metric cards must use the same fixed order as `quick`: `平台 / 作者 / 发布时间 / 视频时长 /
+   播放量 / 评论数 / 点赞数 / 分享数`. Do not add a report-type card by default and do not replace a
+   missing metric with another metric.
 2. AI multi-dimensional evaluation snapshot: render the compact rating visual before the video overview.
    Keep detailed rating reasoning for the later AI critique section.
 3. Video overview and content map.
@@ -348,6 +365,9 @@ Use this structure for `deep` unless the user asks otherwise:
 
 - Both modes may include a lightweight `注意事项` module near the end.
 - Do not dump raw tool logs.
+- User-facing attention notes must be written in Chinese. Do not expose raw diagnostic codes such as
+  `MEDIA_DOWNLOAD_FAILED` as the visible title; translate or summarize the issue and keep the raw code
+  traceable through `diagnostics.json` or the evidence index.
 - Include only diagnostics that materially affect interpretation, such as transcript disagreement, missing
   or partial comments, missing visual evidence, OCR absence for screen-text-heavy videos, or platform
   permission/risk-control diagnostics.

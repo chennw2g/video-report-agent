@@ -172,9 +172,22 @@ def extract_frames(
             "--max-screenshots",
             "--max-candidate-screenshots",
             min=0,
-            help="Maximum screenshot candidates to create. Use 0 for no candidate cap.",
+            help=(
+                "Maximum screenshot candidates to create. Use 0 for no cap; with --plan, "
+                "this keeps all planned coarse and semantic-anchor candidates."
+            ),
         ),
     ] = 0,
+    plan_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--plan",
+            help=(
+                "Agent-authored visual_selection_plan.json, relative to the bundle by default. "
+                "If omitted, the bundle's visual_selection_plan.json is used when present."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Extract screenshots from an existing bundle's local working video."""
 
@@ -190,6 +203,7 @@ def extract_frames(
         visual_recall=visual_recall,
         visual_strategy=visual_strategy,
         max_screenshots=max_screenshots,
+        plan_path=plan_path,
     )
     typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
 
@@ -240,7 +254,10 @@ def analyze(
             "--max-screenshots",
             "--max-candidate-screenshots",
             min=0,
-            help="Maximum screenshot candidates to create. Use 0 for no candidate cap.",
+            help=(
+                "Maximum screenshot candidates to create for one-step analyze. Use 0 for no cap "
+                "on the selected extraction strategy."
+            ),
         ),
     ] = 0,
     max_danmaku: Annotated[
@@ -342,6 +359,7 @@ def analyze(
             visual_strategy=visual_strategy,
             max_screenshots=max_screenshots,
             force_transcription=force_transcription,
+            compare_auto_subtitles=compare_auto_subtitles,
             cookies=cookies,
             cookies_from_browser=cookies_from_browser,
         )
@@ -358,7 +376,14 @@ def analyze(
             cookies=cookies,
         )
     elif platform == "local_video":
-        result = analyze_local_video(source, out)
+        result = analyze_local_video(
+            source,
+            out,
+            visual_recall=visual_recall,
+            visual_strategy=visual_strategy,
+            max_screenshots=max_screenshots,
+            force_transcription=force_transcription,
+        )
     else:
         raise typer.BadParameter(f"Unsupported source platform for phase 1: {source}")
 

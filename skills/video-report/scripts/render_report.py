@@ -321,7 +321,7 @@ th,
 td {
   padding: 11px 12px;
   border-bottom: 1px solid var(--line);
-  text-align: left;
+  text-align: center;
   vertical-align: top;
   color: #36485a;
   font-size: 14px;
@@ -843,27 +843,90 @@ def default_tags(metadata: dict[str, Any], content: dict[str, Any]) -> list[str]
     return [str(tag) for tag in fallback if tag]
 
 
-def default_metrics(metadata: dict[str, Any], content: dict[str, Any]) -> list[dict[str, str]]:
-    metrics = content.get("metrics")
-    if isinstance(metrics, list) and metrics:
-        return [item for item in metrics if isinstance(item, dict)]
+def metric_label_key(value: Any) -> str:
+    return "".join(str(value or "").strip().lower().split())
 
-    source = metadata.get("source") or {}
+
+HEADER_METRIC_ORDER: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("platform", "平台", ("platform", "平台")),
+    (
+        "author",
+        "作者",
+        ("author", "creator", "uploader", "channel", "作者", "博主", "UP主", "频道"),
+    ),
+    (
+        "published_at",
+        "发布时间",
+        ("published_at", "publish_time", "date", "发布时间", "发布日期"),
+    ),
+    ("duration", "视频时长", ("duration", "length", "视频时长", "时长")),
+    ("view_count", "播放量", ("view_count", "views", "播放量", "观看数", "浏览量")),
+    ("comment_count", "评论数", ("comment_count", "comments", "评论数", "评论")),
+    ("like_count", "点赞数", ("like_count", "likes", "点赞数", "点赞")),
+    (
+        "share_count",
+        "分享数",
+        ("share_count", "shares", "reposts", "分享数", "转发数", "分享/转发数"),
+    ),
+)
+
+
+def _metric_rows_by_key(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    by_key: dict[str, Any] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        label_key = metric_label_key(row.get("label"))
+        if not label_key:
+            continue
+        for metric_key, _label, aliases in HEADER_METRIC_ORDER:
+            if label_key in {metric_label_key(alias) for alias in aliases}:
+                by_key[metric_key] = row.get("value")
+                break
+    return by_key
+
+
+def _display_date(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    if "T" in raw and len(raw) >= 10:
+        return raw[:10]
+    return raw
+
+
+def _metric_metadata_value(metric_key: str, metadata: dict[str, Any]) -> str:
+    source = metadata.get("source") if isinstance(metadata.get("source"), dict) else {}
+    if metric_key == "platform":
+        return str(first_non_empty(source.get("platform"), metadata.get("extractor")))
+    if metric_key == "author":
+        return str(
+            first_non_empty(
+                metadata.get("uploader"),
+                metadata.get("channel"),
+                metadata.get("author"),
+            )
+        )
+    if metric_key == "published_at":
+        return _display_date(metadata.get("published_at"))
+    if metric_key == "duration":
+        return format_duration(metadata.get("duration"))
+    if metric_key in {"view_count", "comment_count", "like_count", "share_count"}:
+        value = metadata.get(metric_key)
+        return format_int(value) if value is not None else ""
+    return ""
+
+
+def default_metrics(metadata: dict[str, Any], content: dict[str, Any]) -> list[dict[str, str]]:
+    content_rows = [item for item in ensure_list(content.get("metrics")) if isinstance(item, dict)]
+    content_values = _metric_rows_by_key(content_rows)
     rows: list[dict[str, str]] = []
-    platform = source.get("platform") or metadata.get("extractor")
-    if platform:
-        rows.append({"label": "平台", "value": str(platform)})
-    if metadata.get("uploader"):
-        rows.append({"label": "作者", "value": str(metadata["uploader"])})
-    duration = format_duration(metadata.get("duration"))
-    if duration:
-        rows.append({"label": "时长", "value": duration})
-    if metadata.get("view_count") is not None:
-        rows.append({"label": "播放量", "value": format_int(metadata["view_count"])})
-    if metadata.get("like_count") is not None:
-        rows.append({"label": "点赞数", "value": format_int(metadata["like_count"])})
-    if metadata.get("comment_count") is not None:
-        rows.append({"label": "评论数", "value": format_int(metadata["comment_count"])})
+    for metric_key, label, _aliases in HEADER_METRIC_ORDER:
+        value = content_values.get(metric_key)
+        value_text = str(value).strip() if value not in (None, "") else ""
+        if not value_text:
+            value_text = _metric_metadata_value(metric_key, metadata)
+        rows.append({"label": label, "value": value_text or "未获取"})
     return rows
 
 
@@ -1358,6 +1421,65 @@ def render_list_items(values: Any) -> str:
     return "\n".join(f"<li>{text(value)}</li>" for value in ensure_list(values) if value)
 
 
+DIAGNOSTIC_TITLE_MAP = {
+    "MEDIA_DOWNLOAD_FAILED": "媒体资源下载失败",
+    "TOOL_MISSING": "本地工具缺失",
+    "YTDLP_FAILED": "yt-dlp 获取失败",
+    "FFMPEG_FAILED": "ffmpeg 处理失败",
+    "FFPROBE_FAILED": "ffprobe 读取失败",
+    "METADATA_UNAVAILABLE": "元数据不可用",
+    "TRANSCRIPT_UNAVAILABLE": "字幕或转录不可用",
+    "COMMENTS_UNAVAILABLE": "评论不可用",
+    "DANMAKU_UNAVAILABLE": "弹幕不可用",
+    "BUNDLE_INCOMPLETE": "Bundle 不完整",
+    "PLATFORM_UNSUPPORTED": "平台暂不支持",
+    "PERMISSION_REQUIRED": "平台权限或风控限制",
+    "COOKIE_REQUIRED": "需要有效登录 Cookie",
+    "RATE_LIMITED": "平台限流",
+    "FRAME_EXTRACTION_FAILED": "截图抽取失败",
+    "VIDEO_FILE_UNAVAILABLE": "本地视频文件不可用",
+    "OCR_TOOL_MISSING": "OCR 工具缺失",
+    "OCR_FAILED": "OCR 识别失败",
+}
+
+
+DIAGNOSTIC_BODY_MAP = {
+    "MEDIA_DOWNLOAD_FAILED": (
+        "某个附属媒体资源下载失败。若主视频、封面、本地截图、转录和评论已经生成，"
+        "通常不影响报告主体；详情可查看 diagnostics.json。"
+    ),
+    "COOKIE_REQUIRED": "平台内容或评论需要有效登录状态。请更新对应平台 Cookie 后重试。",
+    "PERMISSION_REQUIRED": (
+        "平台返回权限、验证或风控限制。核心证据可用时继续报告；受影响部分按缺失处理。"
+    ),
+    "COMMENTS_UNAVAILABLE": "评论抓取失败或不可用。本报告不把评论区反馈当作完整观众观点。",
+    "TRANSCRIPT_UNAVAILABLE": "字幕或音频转录不可用，无法写出可靠内容报告。",
+    "FRAME_EXTRACTION_FAILED": "截图或关键帧抽取失败，视觉证据不完整。",
+}
+
+
+def normalize_diagnostic_record(record: dict[str, Any]) -> dict[str, Any]:
+    code = str(record.get("code") or "").strip()
+    severity = record.get("severity") or record.get("level") or "warning"
+    title = DIAGNOSTIC_TITLE_MAP.get(code) or first_non_empty(record.get("title"), code, "诊断提示")
+    body = DIAGNOSTIC_BODY_MAP.get(code) or first_non_empty(
+        record.get("body"),
+        record.get("detail"),
+        record.get("message"),
+    )
+    details = record.get("details") if isinstance(record.get("details"), dict) else {}
+    evidence = first_non_empty(record.get("evidence"), record.get("source"))
+    if not evidence and details:
+        evidence = details.get("media_type") or details.get("stage")
+    return {
+        "severity": severity,
+        "title": title,
+        "body": body,
+        "evidence": evidence,
+        "code": code,
+    }
+
+
 def diagnostic_records(bundle_dir: Path, content: dict[str, Any]) -> list[dict[str, Any]]:
     notes = [
         item for item in ensure_list(content.get("diagnostic_notes")) if isinstance(item, dict)
@@ -1370,17 +1492,7 @@ def diagnostic_records(bundle_dir: Path, content: dict[str, Any]) -> list[dict[s
     for record in ensure_list(records):
         if not isinstance(record, dict):
             continue
-        normalized.append(
-            {
-                "severity": record.get("severity") or record.get("level") or "warning",
-                "title": first_non_empty(record.get("code"), record.get("title"), "诊断提示"),
-                "body": first_non_empty(
-                    record.get("message"),
-                    record.get("body"),
-                    record.get("detail"),
-                ),
-            }
-        )
+        normalized.append(normalize_diagnostic_record(record))
     return normalized
 
 

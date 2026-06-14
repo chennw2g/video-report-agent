@@ -39,6 +39,28 @@ def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _resolve_plan_path(bundle_dir: Path, plan_path: Path | None) -> Path | None:
+    if plan_path is None:
+        candidate = bundle_dir / "visual_selection_plan.json"
+        return candidate if candidate.exists() else None
+    candidate = plan_path if plan_path.is_absolute() else bundle_dir / plan_path
+    return candidate if candidate.exists() else None
+
+
+def _load_visual_plan(
+    bundle_dir: Path,
+    plan_path: Path | None,
+) -> tuple[dict[str, Any] | None, str | None]:
+    resolved = _resolve_plan_path(bundle_dir, plan_path)
+    if resolved is None:
+        return None, None
+    try:
+        relative_path = _relative_to_bundle(bundle_dir, resolved)
+    except ValueError:
+        relative_path = str(resolved)
+    return _read_json(resolved), relative_path
+
+
 def _load_bundle(bundle_dir: Path) -> BundleIndex:
     return BundleIndex.model_validate(_read_json(bundle_dir / "bundle.json"))
 
@@ -192,6 +214,7 @@ def extract_frames_for_bundle(
     visual_recall: str,
     visual_strategy: str = "auto",
     max_screenshots: int = 0,
+    plan_path: Path | None = None,
 ) -> dict[str, Any]:
     bundle_dir = bundle_dir.resolve()
     timings = StageTimings.load(bundle_dir / "timings.json")
@@ -207,6 +230,7 @@ def extract_frames_for_bundle(
 
     working_video = _find_working_video(bundle_dir=bundle_dir, bundle=bundle, manifest=manifest)
     screenshot_paths: list[Path] = []
+    visual_plan, visual_plan_relative_path = _load_visual_plan(bundle_dir, plan_path)
 
     if working_video is None:
         diagnostics.add(
@@ -229,6 +253,7 @@ def extract_frames_for_bundle(
                     "visual_recall": visual_recall,
                     "visual_strategy": visual_strategy,
                     "max_screenshots": max_screenshots,
+                    "visual_selection_plan_path": visual_plan_relative_path,
                 },
             ):
                 slides_payload, screenshot_paths, visual_warnings = create_visual_recall_slides(
@@ -240,6 +265,7 @@ def extract_frames_for_bundle(
                     visual_strategy=visual_strategy,
                     max_screenshots=max_screenshots,
                     transcript_segments=_load_transcript_segments(bundle_dir, bundle),
+                    visual_plan=visual_plan,
                 )
                 _add_visual_warnings(diagnostics, visual_warnings)
                 _remove_stale_candidate_screenshots(
@@ -302,6 +328,7 @@ def extract_frames_for_bundle(
             "visual_recall": visual_recall,
             "visual_strategy": visual_strategy,
             "max_screenshots": max_screenshots,
+            "visual_selection_plan_path": visual_plan_relative_path,
         },
     )
     readiness = evaluate_bundle_readiness(bundle_dir)

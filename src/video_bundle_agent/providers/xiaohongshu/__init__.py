@@ -1,1 +1,1 @@
-"""Xiaohongshu provider skeleton."""
+"""Xiaohongshu provider."""

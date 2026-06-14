@@ -4,6 +4,7 @@ import json
 import mimetypes
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -791,6 +792,12 @@ def _add_transcription_info_artifacts(
             )
 
 
+def _merge_artifacts(target: BundleArtifacts, source: BundleArtifacts) -> None:
+    for key, relative_path in source.paths.items():
+        kind = source.kinds.get(str(relative_path), "artifact") if relative_path else "artifact"
+        target.add(key, kind, relative_path)
+
+
 def _transcribe_working_video(
     *,
     source: SourceInfo,
@@ -1069,56 +1076,84 @@ def analyze_xiaohongshu(
             error=error,
         )
 
-    if fetch_comments and capabilities.has_metadata:
-        try:
-            with timings.stage("comments", {"max_comments": max_comments}):
-                comments_payload = _fetch_mediacrawler_comments_payload(
-                    source=source,
-                    output_dir=output_dir,
-                    max_comments=max_comments,
-                )
-                write_json(output_dir / "comments.json", comments_payload)
-                artifacts.add("comments_path", "comments", "comments.json")
-                capabilities.has_comments = bool(comments_payload["items"])
-        except Exception as error:  # noqa: BLE001
-            diagnostics.add(
-                code="COMMENTS_UNAVAILABLE",
-                severity="warning",
-                stage="comments",
-                message="MediaCrawler did not produce Xiaohongshu comments.",
-                details={"error": repr(error)},
-            )
-            _diagnose_xhs_comment_failure(diagnostics, error)
+    parallel_tasks = {}
 
-    if working_video is not None and (force_transcription or not transcript_segments):
-        try:
-            with timings.stage("audio_transcription"):
-                transcript_segments = _transcribe_working_video(
-                    source=source,
-                    output_dir=output_dir,
-                    artifacts=artifacts,
-                    working_video=working_video,
-                )
-                capabilities.has_transcript = bool(transcript_segments)
-                if not transcript_segments:
-                    diagnostics.add(
-                        code="TRANSCRIPTION_UNAVAILABLE",
-                        severity="warning",
-                        stage="audio_transcription",
-                        message=(
-                            "Local audio transcription did not produce usable "
-                            "transcript segments."
-                        ),
-                    )
-        except Exception as error:  # noqa: BLE001
-            _diagnose_failure(
-                diagnostics,
-                code="TRANSCRIPTION_UNAVAILABLE",
-                severity="warning",
-                stage="audio_transcription",
-                error=error,
+    def collect_comments_task() -> dict[str, Any]:
+        with timings.stage("comments", {"max_comments": max_comments}):
+            return _fetch_mediacrawler_comments_payload(
+                source=source,
+                output_dir=output_dir,
+                max_comments=max_comments,
             )
-    elif capabilities.has_metadata:
+
+    def transcribe_video_task() -> tuple[list[dict[str, Any]], BundleArtifacts]:
+        transcription_artifacts = BundleArtifacts()
+        with timings.stage("audio_transcription"):
+            segments = _transcribe_working_video(
+                source=source,
+                output_dir=output_dir,
+                artifacts=transcription_artifacts,
+                working_video=working_video,  # type: ignore[arg-type]
+            )
+        return segments, transcription_artifacts
+
+    should_fetch_comments = fetch_comments and capabilities.has_metadata
+    should_transcribe = working_video is not None and (
+        force_transcription or not transcript_segments
+    )
+
+    if should_fetch_comments or should_transcribe:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            if should_fetch_comments:
+                parallel_tasks[executor.submit(collect_comments_task)] = "comments"
+            if should_transcribe:
+                parallel_tasks[executor.submit(transcribe_video_task)] = "audio_transcription"
+
+            for future in as_completed(parallel_tasks):
+                stage = parallel_tasks[future]
+                try:
+                    result = future.result()
+                except Exception as error:  # noqa: BLE001
+                    if stage == "comments":
+                        diagnostics.add(
+                            code="COMMENTS_UNAVAILABLE",
+                            severity="warning",
+                            stage="comments",
+                            message="MediaCrawler did not produce Xiaohongshu comments.",
+                            details={"error": repr(error)},
+                        )
+                        _diagnose_xhs_comment_failure(diagnostics, error)
+                    else:
+                        _diagnose_failure(
+                            diagnostics,
+                            code="TRANSCRIPTION_UNAVAILABLE",
+                            severity="warning",
+                            stage="audio_transcription",
+                            error=error,
+                        )
+                    continue
+
+                if stage == "comments":
+                    comments_payload = result  # type: ignore[assignment]
+                    write_json(output_dir / "comments.json", comments_payload)
+                    artifacts.add("comments_path", "comments", "comments.json")
+                    capabilities.has_comments = bool(comments_payload["items"])
+                else:
+                    transcript_segments, transcription_artifacts = result  # type: ignore[misc]
+                    _merge_artifacts(artifacts, transcription_artifacts)
+                    capabilities.has_transcript = bool(transcript_segments)
+                    if not transcript_segments:
+                        diagnostics.add(
+                            code="TRANSCRIPTION_UNAVAILABLE",
+                            severity="warning",
+                            stage="audio_transcription",
+                            message=(
+                                "Local audio transcription did not produce usable "
+                                "transcript segments."
+                            ),
+                        )
+
+    if not should_transcribe and working_video is None and capabilities.has_metadata:
         diagnostics.add(
             code="TRANSCRIPT_UNAVAILABLE",
             severity="warning",

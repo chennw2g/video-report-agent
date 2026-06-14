@@ -106,8 +106,9 @@ Each bundle should contain:
   audience feedback, retained working video/audio, and optional visual recall.
 - Staged frame extraction command for existing bundles.
 - Bilibili API-first provider: `bilibili-api-python` for metadata, BV/AV/CID/page info, top-liked
-  comments, optional danmaku, API playurl media download, retained working video/audio, Chinese FunASR transcription
-  fallback, screenshots, and diagnostics; `yt-dlp` remains fallback only when API metadata or media fails.
+  comments, optional danmaku, player subtitle extraction, API playurl media download, retained working
+  video/audio, language-aware transcription fallback, automatic-subtitle comparison transcripts, screenshots,
+  and diagnostics; `yt-dlp` remains fallback only when API metadata or media fails.
 - Xiaohongshu basic provider: URL/short-link resolution, explicit cookies, HTML note extraction,
   media URL normalization/download, Chinese FunASR video transcription, visual recall, and MediaCrawler-only bounded
   top-level comments through MediaCrawler's official `xhs detail` jsonl workflow. Observed account/session
@@ -116,7 +117,9 @@ Each bundle should contain:
 - Provider hardening: normalize common short/share URLs before platform API collection, keep the original
   input URL in bundle source metadata, download source thumbnails/covers to `raw/thumbnail/`, and write
   lightweight timing diagnostics to `timings.json`.
-- Local video provider skeleton.
+- Local video baseline provider: import/copy local media into `raw/media/`, read ffprobe metadata, extract
+  local audio, run the shared language-aware transcription route, optionally extract screenshots/keyframes,
+  and generate normal bundle/readiness artifacts with platform comments and engagement marked unavailable.
 
 ## Implementation Order
 
@@ -188,22 +191,25 @@ Strategy behavior:
 This keeps the default `medium` run faster while still adding useful frames around transcript cues.
 Scene detection is more expensive because ffmpeg scans the video, so it is reserved for `high` or explicit strategy requests.
 
-Candidate screenshot collection prioritizes complete visual coverage. The default candidate cap is `0`,
-meaning no cap. This lets dense tutorial, software demo, chart, and news videos preserve full fixed-interval
-coverage in `screenshots/candidates/`.
+Candidate screenshot collection uses two phases in the skill workflow: a coarse baseline sample plus
+agent-authored semantic anchor frames from `visual_selection_plan.json`. The default candidate cap is `0`,
+meaning no cap on that planned coarse+anchor set. This avoids hundreds of low-value candidates while still
+preserving the important moments the agent identified from transcript, chapters, and source type.
 
-A positive `--max-screenshots` or `--max-candidate-screenshots` value is an explicit performance/storage limit.
-If interval extraction exceeds that positive cap, sample timestamps evenly across the video, record the
-sampling/cap information in `slides.json.extraction`, and emit a `VISUAL_COVERAGE_TRUNCATED` diagnostic.
-The cap applies to the combined candidate set after fixed, keyword, and scene candidates are merged.
+A positive `--max-screenshots` or `--max-candidate-screenshots` value is an explicit performance/storage
+limit. If extraction exceeds that positive cap, sample timestamps evenly while preserving focus frames,
+record the sampling/cap information in `slides.json.extraction`, and emit a `VISUAL_COVERAGE_TRUNCATED`
+diagnostic. The cap applies to the combined candidate set after fixed baseline and semantic-anchor
+candidates are merged.
 
 Report image volume is controlled separately by `select-evidence` and `prepare-report --max-images`.
-The skill should keep report inputs selective while letting the bundle retain broad candidate coverage.
+The skill should keep report inputs selective while the bundle retains the planned candidate evidence.
 
 After the agent reads the transcript and content profile, it should write `visual_selection_plan.json` before
-running evidence selection. This keeps image selection semantic without making the Python tool call an LLM:
-the agent names the important anchors and whether each anchor needs an image, while the tool matches those
-anchors against transcript timestamps and `slides.json`. The selected output remains an index in
+running `extract-frames --plan`, then evidence selection. This keeps image extraction semantic without
+making the Python tool call an LLM: the agent names the important anchors and whether each anchor needs an
+image, while the tool turns those time hints into targeted screenshots and then matches them against
+`slides.json`. The selected output remains an index in
 `report.input.json`; the final report agent still decides which selected images belong in the body.
 
 Screenshots are written to:
@@ -233,13 +239,13 @@ ffmpeg -ss <seconds> -i <video_file> -frames:v 1 -q:v 1 <output.png>
 The prep skill chooses visual recall by semantic judgment. Common labels include `访谈`, `单人播客`, `新闻`,
 `教程`, `深度分析`, `产品介绍`, `会议`, `演讲`, `脱口秀`, `软件演示`, `财经分析`, and `课程`.
 
-Low visual-density videos such as solo podcasts and interviews usually use low/fixed. High visual-density videos
-such as tutorials, news, software demos, finance charts, and data-rich analysis usually use high/all. Treat this as
-guidance, not an automatic rule table.
+Low visual-density videos such as solo podcasts and interviews usually use low/fixed or low/auto. High
+visual-density videos such as tutorials, news, software demos, finance charts, and data-rich analysis usually
+use high/auto with a detailed `visual_selection_plan.json`. Treat this as guidance, not an automatic rule table.
 
-Current visual recall can combine fixed interval, transcript keyword triggers, and ffmpeg scene-change detection.
-Future work should improve their scoring, deduplication, and selection rather than moving semantic classification
-into provider rules.
+Current skill-led visual recall uses coarse fixed interval plus semantic-anchor frames from the agent plan.
+The older transcript keyword trigger and ffmpeg scene-change paths remain available as lower-level strategies,
+but they should not replace the agent plan in normal report workflows.
 
 Phase 2 still defers:
 

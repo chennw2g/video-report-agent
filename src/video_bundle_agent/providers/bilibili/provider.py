@@ -16,6 +16,7 @@ from bilibili_api import video as bilibili_video
 from video_bundle_agent.bundle.readiness import evaluate_bundle_readiness
 from video_bundle_agent.bundle.schema import Capabilities, SourceInfo
 from video_bundle_agent.bundle.timings import StageTimings
+from video_bundle_agent.bundle.transcript_compare import write_transcript_comparison
 from video_bundle_agent.bundle.writer import (
     BundleArtifacts,
     finalize_bundle,
@@ -255,6 +256,128 @@ def _normalize_bilibili_source_chapters(
         "count": len(items),
         "items": items,
     }
+
+
+def _is_bilibili_auto_subtitle(track: dict[str, Any]) -> bool:
+    lan = str(track.get("lan") or track.get("language") or "").lower()
+    lan_doc = str(track.get("lan_doc") or track.get("language_doc") or "").lower()
+    ai_type = track.get("ai_type")
+    return (
+        lan.startswith("ai-")
+        or "自动" in lan_doc
+        or "auto" in lan_doc
+        or "ai" in lan_doc
+        or ai_type not in (None, "", 0, "0", False)
+    )
+
+
+def _bilibili_subtitle_language(track: dict[str, Any]) -> str:
+    language = str(track.get("lan") or track.get("language") or "").strip()
+    if language.startswith("ai-"):
+        language = language.removeprefix("ai-")
+    return language or "auto"
+
+
+def _bilibili_subtitle_source(track: dict[str, Any]) -> str:
+    if _is_bilibili_auto_subtitle(track):
+        return "bilibili_auto_subtitle"
+    return "bilibili_manual_subtitle"
+
+
+def _subtitle_url_from_track(track: dict[str, Any]) -> str:
+    url = str(track.get("subtitle_url") or track.get("url") or "").strip()
+    if url.startswith("//"):
+        return f"https:{url}"
+    return url
+
+
+def _bilibili_subtitle_track_score(track: dict[str, Any]) -> tuple[int, int, str]:
+    language = _bilibili_subtitle_language(track).lower()
+    lan_doc = str(track.get("lan_doc") or track.get("language_doc") or "").lower()
+    language_key = f"{language} {lan_doc}"
+    if "zh-hans" in language_key or "zh-cn" in language_key or "中文" in lan_doc:
+        language_score = 0
+    elif "zh-hant" in language_key or "zh-tw" in language_key:
+        language_score = 1
+    elif language.startswith("zh"):
+        language_score = 2
+    elif language.startswith("en"):
+        language_score = 3
+    else:
+        language_score = 9
+    auto_score = 1 if _is_bilibili_auto_subtitle(track) else 0
+    return (language_score, auto_score, language)
+
+
+def _select_bilibili_subtitle_track(subtitle: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(subtitle, dict):
+        return None
+    tracks = [
+        track
+        for track in subtitle.get("subtitles") or []
+        if isinstance(track, dict) and _subtitle_url_from_track(track)
+    ]
+    if not tracks:
+        return None
+    return min(tracks, key=_bilibili_subtitle_track_score)
+
+
+def _download_bilibili_subtitle_json(
+    *,
+    track: dict[str, Any],
+    output_path: Path,
+    source_url: str,
+) -> dict[str, Any]:
+    url = _subtitle_url_from_track(track)
+    if not url:
+        raise FileNotFoundError("Bilibili subtitle track did not include a subtitle URL.")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
+        ),
+        "Referer": source_url,
+        "Accept": "application/json,text/plain,*/*",
+    }
+    with httpx.Client(headers=headers, follow_redirects=True, timeout=60) as client:
+        response = client.get(url)
+        response.raise_for_status()
+        payload = response.json()
+    if not isinstance(payload, dict):
+        raise ValueError("Bilibili subtitle response was not a JSON object.")
+    write_json(output_path, payload)
+    return payload
+
+
+def _parse_bilibili_subtitle_segments(
+    payload: dict[str, Any],
+    *,
+    transcript_source: str,
+) -> list[dict[str, Any]]:
+    segments: list[dict[str, Any]] = []
+    for item in payload.get("body") or payload.get("segments") or []:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("content") or item.get("text") or "").strip()
+        if not text:
+            continue
+        start = _chapter_seconds(_first_present(item.get("from"), item.get("start")))
+        end = _chapter_seconds(_first_present(item.get("to"), item.get("end")))
+        if start is None:
+            continue
+        if end is None or end < start:
+            end = start
+        segments.append(
+            {
+                "id": f"{len(segments):05d}",
+                "start": start,
+                "end": end,
+                "text": text,
+                "source": transcript_source,
+            }
+        )
+    return segments
 
 
 def _build_audience_feedback(
@@ -705,6 +828,73 @@ def _write_transcript_artifacts(
     artifacts.add("transcript_text_path", "transcript_text", "transcript.txt")
 
 
+def _jsonable_dict(value: dict[str, Any] | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    result: dict[str, Any] = {}
+    for key, item in value.items():
+        result[key] = str(item) if isinstance(item, Path) else item
+    return result
+
+
+def _write_transcript_alternative_artifacts(
+    *,
+    output_dir: Path,
+    artifacts: BundleArtifacts,
+    source: SourceInfo,
+    primary_transcript_path: str,
+    segments: list[dict[str, Any]],
+    language: str,
+    transcript_source: str,
+    reason: str,
+    model_path: Path | None = None,
+    language_detection: dict[str, Any] | None = None,
+) -> None:
+    suffix = "funasr" if "funasr" in transcript_source.lower() else "whisper"
+    transcript_path = f"transcript.{suffix}.segments.json"
+    transcript_text_path = f"transcript.{suffix}.txt"
+    jsonable_language_detection = _jsonable_dict(language_detection)
+    transcript_payload = build_transcript_payload(
+        source=source.model_dump(mode="json"),
+        segments=segments,
+        language=language,
+        transcript_source=transcript_source,
+        model_path=model_path,
+        language_detection=jsonable_language_detection,
+    )
+    write_json(output_dir / transcript_path, transcript_payload)
+    write_text(
+        output_dir / transcript_text_path,
+        "\n".join(str(segment.get("text") or "") for segment in segments).strip() + "\n",
+    )
+    alternatives_payload = {
+        "schema_version": "0.1.0",
+        "source": source.model_dump(mode="json"),
+        "fetched_at": datetime.now(UTC).isoformat(),
+        "primary_transcript_path": primary_transcript_path,
+        "items": [
+            {
+                "transcript_source": transcript_source,
+                "language": language,
+                "reason": reason,
+                "transcript_path": transcript_path,
+                "transcript_text_path": transcript_text_path,
+                "segment_count": len(segments),
+                "model_path": str(model_path) if model_path else None,
+                "language_detection": jsonable_language_detection,
+            }
+        ],
+    }
+    write_json(output_dir / "transcript.alternatives.json", alternatives_payload)
+    artifacts.add(
+        "transcript_alternatives_path",
+        "transcript_alternatives",
+        "transcript.alternatives.json",
+    )
+    artifacts.add("transcript_local_path", "transcript_alternative", transcript_path)
+    artifacts.add("transcript_local_text_path", "transcript_alternative_text", transcript_text_path)
+
+
 def _add_transcription_info_artifacts(
     *,
     output_dir: Path,
@@ -838,7 +1028,7 @@ def _transcribe_audio(
     transcription_info, transcribed_segments = transcribe_audio_for_language(
         wav_path,
         raw_transcription_dir,
-        language="zh",
+        language="auto",
     )
     _add_transcription_info_artifacts(
         output_dir=output_dir,
@@ -867,7 +1057,7 @@ def _transcribe_existing_audio(
     transcription_info, transcribed_segments = transcribe_audio_for_language(
         wav_path,
         raw_transcription_dir,
-        language="zh",
+        language="auto",
     )
     _add_transcription_info_artifacts(
         output_dir=output_dir,
@@ -889,6 +1079,7 @@ def analyze_bilibili(
     visual_strategy: str = "auto",
     max_screenshots: int = 0,
     force_transcription: bool = False,
+    compare_auto_subtitles: bool = True,
     cookies: Path | None = None,
     cookies_from_browser: str | None = None,
 ) -> dict[str, Any]:
@@ -957,6 +1148,7 @@ def analyze_bilibili(
     metadata: dict[str, Any] | None = None
     source = SourceInfo(platform="bilibili", source_url=source_url)
     transcript_segments: list[dict[str, Any]] = []
+    bilibili_subtitle_is_auto = False
     api_metadata_error: Exception | None = None
 
     try:
@@ -1041,6 +1233,52 @@ def analyze_bilibili(
                     "source_chapters",
                     "source_chapters.json",
                 )
+                subtitle_track = _select_bilibili_subtitle_track(
+                    player_data.get("subtitle") if isinstance(player_data, dict) else None
+                )
+                if subtitle_track is not None:
+                    try:
+                        subtitle_language = _bilibili_subtitle_language(subtitle_track)
+                        subtitle_source = _bilibili_subtitle_source(subtitle_track)
+                        safe_language = re.sub(r"[^0-9A-Za-z_-]+", "_", subtitle_language)
+                        subtitle_payload = _download_bilibili_subtitle_json(
+                            track=subtitle_track,
+                            output_path=raw_api_dir / f"subtitle.{safe_language}.json",
+                            source_url=working_source_url,
+                        )
+                        artifacts.add(
+                            "bilibili_api_subtitle_path",
+                            "raw_provider",
+                            (raw_api_dir / f"subtitle.{safe_language}.json")
+                            .relative_to(output_dir)
+                            .as_posix(),
+                        )
+                        parsed_subtitle_segments = _parse_bilibili_subtitle_segments(
+                            subtitle_payload,
+                            transcript_source=subtitle_source,
+                        )
+                        if parsed_subtitle_segments:
+                            transcript_segments = parsed_subtitle_segments
+                            bilibili_subtitle_is_auto = _is_bilibili_auto_subtitle(
+                                subtitle_track
+                            )
+                            _write_transcript_artifacts(
+                                output_dir=output_dir,
+                                artifacts=artifacts,
+                                source=source,
+                                segments=transcript_segments,
+                                language=subtitle_language,
+                                transcript_source=subtitle_source,
+                            )
+                            capabilities.has_transcript = True
+                    except Exception as subtitle_error:  # noqa: BLE001
+                        _diagnose_command_failure(
+                            diagnostics,
+                            code="TRANSCRIPT_UNAVAILABLE",
+                            severity="warning",
+                            stage="transcript_subtitles",
+                            error=subtitle_error,
+                        )
             except Exception as error:  # noqa: BLE001
                 _diagnose_command_failure(
                     diagnostics,
@@ -1303,7 +1541,16 @@ def analyze_bilibili(
                 error=error,
             )
 
-    if working_video is not None and (force_transcription or not transcript_segments):
+    should_compare_auto_subtitles = (
+        compare_auto_subtitles
+        and bool(transcript_segments)
+        and bilibili_subtitle_is_auto
+        and not force_transcription
+    )
+    should_transcribe = (
+        force_transcription or not transcript_segments or should_compare_auto_subtitles
+    )
+    if working_video is not None and should_transcribe:
         try:
             with timings.stage("audio_transcription"):
                 if working_audio is not None:
@@ -1327,24 +1574,59 @@ def analyze_bilibili(
                 if transcribed_segments:
                     model_path = transcription_info.get("model_path")
                     model_path = model_path if isinstance(model_path, Path) else None
-                    transcript_segments = transcribed_segments
-                    _write_transcript_artifacts(
-                        output_dir=output_dir,
-                        artifacts=artifacts,
-                        source=source,
-                        segments=transcript_segments,
-                        language=str(transcription_info.get("language") or "auto"),
-                        transcript_source=str(
-                            transcription_info.get("transcript_source")
-                            or transcription_info.get("engine")
-                            or "local_transcription"
-                        ),
-                        model_path=model_path,
-                        language_detection=transcription_info.get("language_detection")
-                        if isinstance(transcription_info.get("language_detection"), dict)
-                        else None,
+                    transcript_source = str(
+                        transcription_info.get("transcript_source")
+                        or transcription_info.get("engine")
+                        or "local_transcription"
                     )
-                    capabilities.has_transcript = True
+                    language_detection = (
+                        transcription_info.get("language_detection")
+                        if isinstance(transcription_info.get("language_detection"), dict)
+                        else None
+                    )
+                    if should_compare_auto_subtitles:
+                        _write_transcript_alternative_artifacts(
+                            output_dir=output_dir,
+                            artifacts=artifacts,
+                            source=source,
+                            primary_transcript_path="transcript.segments.json",
+                            segments=transcribed_segments,
+                            language=str(transcription_info.get("language") or "auto"),
+                            transcript_source=transcript_source,
+                            reason="auto_subtitle_comparison",
+                            model_path=model_path,
+                            language_detection=language_detection,
+                        )
+                        diagnostics.add(
+                            code="AUTO_SUBTITLE_COMPARISON",
+                            severity="info",
+                            stage="audio_transcription",
+                            message=(
+                                "Bilibili subtitles appear to be automatic; "
+                                "a local transcription comparison transcript was written."
+                            ),
+                            details={
+                                "transcript_alternatives_path": "transcript.alternatives.json",
+                                "segment_count": len(transcribed_segments),
+                            },
+                        )
+                        write_transcript_comparison(
+                            bundle_dir=output_dir,
+                            artifacts=artifacts,
+                        )
+                    else:
+                        transcript_segments = transcribed_segments
+                        _write_transcript_artifacts(
+                            output_dir=output_dir,
+                            artifacts=artifacts,
+                            source=source,
+                            segments=transcript_segments,
+                            language=str(transcription_info.get("language") or "auto"),
+                            transcript_source=transcript_source,
+                            model_path=model_path,
+                            language_detection=language_detection,
+                        )
+                        capabilities.has_transcript = True
                 else:
                     diagnostics.add(
                         code="TRANSCRIPTION_UNAVAILABLE",
@@ -1459,6 +1741,7 @@ def analyze_bilibili(
             "visual_strategy": visual_strategy,
             "max_screenshots": max_screenshots,
             "force_transcription": force_transcription,
+            "compare_auto_subtitles": compare_auto_subtitles,
             "cookies": str(cookies) if cookies else None,
             "cookies_from_browser": cookies_from_browser,
             "no_llm": True,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from fractions import Fraction
 from pathlib import Path
 from typing import Any, Literal
@@ -8,6 +9,7 @@ from video_bundle_agent.bundle.schema import SourceInfo
 from video_bundle_agent.media.ffmpeg import ffprobe_data
 from video_bundle_agent.media.frame_extractor import (
     FrameCandidate,
+    VisualRecallLevel,
     apply_candidate_cap,
     detect_scene_change_timestamps,
     extract_fixed_interval_frames,
@@ -52,6 +54,120 @@ def probe_video_info(video_path: Path) -> dict[str, Any]:
 
 
 VisualStrategy = Literal["auto", "fixed", "keyword", "scene", "all"]
+
+PLANNED_COARSE_INTERVALS: dict[VisualRecallLevel, int] = {
+    "low": 30,
+    "medium": 15,
+    "high": 8,
+}
+
+TIME_HINT_RANGE_RE = re.compile(r"\s*(?:-|–|—|~|至|到)\s*")
+
+
+def coarse_interval_for_visual_recall(level: str) -> int:
+    if level not in PLANNED_COARSE_INTERVALS:
+        raise ValueError(f"Unsupported visual recall level: {level}")
+    return PLANNED_COARSE_INTERVALS[level]  # type: ignore[index]
+
+
+def _parse_time_token(value: str) -> float | None:
+    raw = value.strip().lower()
+    if not raw:
+        return None
+    raw = raw.removesuffix("s").strip()
+    try:
+        return float(raw)
+    except ValueError:
+        pass
+    parts = raw.split(":")
+    if not 1 <= len(parts) <= 3:
+        return None
+    try:
+        numbers = [float(part) for part in parts]
+    except ValueError:
+        return None
+    seconds = 0.0
+    for number in numbers:
+        seconds = seconds * 60 + number
+    return seconds
+
+
+def _parse_time_hint(value: Any, duration: float) -> tuple[float, float] | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    parts = TIME_HINT_RANGE_RE.split(raw, maxsplit=1)
+    start = _parse_time_token(parts[0])
+    if start is None:
+        return None
+    end = _parse_time_token(parts[1]) if len(parts) > 1 else start
+    if end is None:
+        end = start
+    if end < start:
+        start, end = end, start
+    return _clamp_range(start, end, duration)
+
+
+def _clamp_range(start: float, end: float, duration: float) -> tuple[float, float]:
+    if duration <= 0:
+        return _round_timestamp(start), _round_timestamp(end)
+    last_timestamp = max(0.0, duration - 0.1)
+    return (
+        _round_timestamp(min(max(0.0, start), last_timestamp)),
+        _round_timestamp(min(max(0.0, end), last_timestamp)),
+    )
+
+
+def _round_timestamp(value: float) -> float:
+    return round(max(0.0, value), 1)
+
+
+def _anchor_hint_timestamps(start: float, end: float) -> list[float]:
+    midpoint = round((start + end) / 2, 1)
+    if end - start <= 6:
+        return [midpoint]
+    return sorted({_round_timestamp(start), midpoint, _round_timestamp(end)})
+
+
+def semantic_anchor_candidates(
+    *,
+    visual_plan: dict[str, Any] | None,
+    duration: float,
+) -> list[FrameCandidate]:
+    if not isinstance(visual_plan, dict):
+        return []
+    anchors = visual_plan.get("semantic_anchors")
+    if not isinstance(anchors, list):
+        return []
+
+    candidates: list[FrameCandidate] = []
+    for index, anchor in enumerate(anchors, start=1):
+        if not isinstance(anchor, dict) or anchor.get("need_screenshot") is False:
+            continue
+        time_hints = anchor.get("time_hints")
+        if not isinstance(time_hints, list):
+            continue
+        anchor_id = str(anchor.get("id") or f"anchor_{index:04d}")
+        anchor_label = str(anchor.get("label") or anchor_id)
+        for hint in time_hints:
+            parsed = _parse_time_hint(hint, duration)
+            if parsed is None:
+                continue
+            start, end = parsed
+            for timestamp in _anchor_hint_timestamps(start, end):
+                candidates.append(
+                    FrameCandidate(
+                        timestamp=timestamp,
+                        source_reasons=["semantic_anchor"],
+                        metadata={
+                            "anchor_id": anchor_id,
+                            "anchor_label": anchor_label,
+                            "anchor_time_hint": str(hint),
+                            "anchor_body_placement": str(anchor.get("body_placement") or ""),
+                        },
+                    )
+                )
+    return candidates
 
 
 def resolve_visual_strategies(*, visual_recall: str, visual_strategy: str) -> list[str]:
@@ -127,7 +243,7 @@ def _visual_coverage_warning(
         "stage": "visual_recall",
         "message": (
             "Screenshot candidate coverage was truncated by --max-screenshots. "
-            "Use --max-screenshots 0 for full fixed-interval coverage."
+            "Use --max-screenshots 0 to keep the planned candidate set."
         ),
         "details": {
             "max_screenshots": max_screenshots,
@@ -166,12 +282,22 @@ def create_visual_recall_slides(
     max_screenshots: int,
     visual_strategy: str = "auto",
     transcript_segments: list[dict[str, Any]] | None = None,
+    visual_plan: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], list[Path], list[dict[str, Any]]]:
     video_info = probe_video_info(video_path)
-    interval_seconds = interval_for_visual_recall(visual_recall)
-    strategies = resolve_visual_strategies(
-        visual_recall=visual_recall,
-        visual_strategy=visual_strategy,
+    planned_sampling = isinstance(visual_plan, dict)
+    interval_seconds = (
+        coarse_interval_for_visual_recall(visual_recall)
+        if planned_sampling
+        else interval_for_visual_recall(visual_recall)
+    )
+    strategies = (
+        ["fixed_interval"]
+        if planned_sampling
+        else resolve_visual_strategies(
+            visual_recall=visual_recall,
+            visual_strategy=visual_strategy,
+        )
     )
     fixed_candidates, fixed_sampled_due_to_cap, fixed_skipped_count = fixed_interval_candidates(
         duration=video_info["duration"],
@@ -180,6 +306,14 @@ def create_visual_recall_slides(
     )
     candidates: list[FrameCandidate] = list(fixed_candidates)
     warnings: list[dict[str, Any]] = []
+
+    anchor_candidates = semantic_anchor_candidates(
+        visual_plan=visual_plan,
+        duration=video_info["duration"],
+    )
+    if anchor_candidates:
+        strategies = [*strategies, "semantic_anchor"]
+        candidates.extend(anchor_candidates)
 
     keyword_candidates: list[FrameCandidate] = []
     keyword_skipped_count = 0
@@ -265,6 +399,8 @@ def create_visual_recall_slides(
             "visual_strategy": visual_strategy,
             "visual_recall": visual_recall,
             "interval_seconds": interval_seconds,
+            "planned_sampling": planned_sampling,
+            "coarse_sampling": planned_sampling,
             "max_screenshots": max_screenshots,
             "candidate_cap": _candidate_cap(max_screenshots),
             "candidate_cap_unlimited": max_screenshots <= 0,
@@ -290,6 +426,13 @@ def create_visual_recall_slides(
                 "enabled": "keyword_trigger" in strategies,
                 "candidate_count": len(keyword_candidates),
                 "skipped_count": keyword_skipped_count,
+            },
+            "semantic_anchor": {
+                "enabled": planned_sampling,
+                "candidate_count": len(anchor_candidates),
+                "semantic_anchor_count": len(visual_plan.get("semantic_anchors") or [])
+                if isinstance(visual_plan, dict)
+                else 0,
             },
             "scene_change": {
                 "enabled": "scene_change" in strategies,

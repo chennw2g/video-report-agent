@@ -1,1 +1,1 @@
-"""Bilibili provider skeleton."""
+"""Bilibili provider."""

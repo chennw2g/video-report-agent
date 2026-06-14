@@ -466,7 +466,16 @@ Recommended shared shape:
   "summary": "",
   "conclusion": "",
   "tags": [],
-  "metrics": [{"label": "", "value": ""}],
+  "metrics": [
+    {"label": "平台", "value": ""},
+    {"label": "作者", "value": ""},
+    {"label": "发布时间", "value": ""},
+    {"label": "视频时长", "value": ""},
+    {"label": "播放量", "value": "number|未获取"},
+    {"label": "评论数", "value": "number|未获取"},
+    {"label": "点赞数", "value": "number|未获取"},
+    {"label": "分享数", "value": "number|未获取"}
+  ],
   "evaluation": {
     "scale": {"min": 1, "max": 5},
     "dimensions": [
@@ -524,7 +533,9 @@ Recommended shared shape:
 The renderer may evolve, but it should follow the Template D / `Editorial Lab` visual baseline in
 `docs/report-visual-style.md`. The content contract should preserve these semantics: mode-specific output,
 inline visual evidence, AI 1-5 evaluation dimensions, representative comment quotes with `like_count`
-when available, and explicit attention notes for source cautions, diagnostics, and report limits.
+when available, and explicit attention notes for source cautions, diagnostics, and report limits. Header
+metrics should use the fixed order `平台 / 作者 / 发布时间 / 视频时长 / 播放量 / 评论数 / 点赞数 /
+分享数`. If a metric is unavailable, write `未获取` instead of substituting another engagement metric.
 
 Source vs AI interpretation:
 
@@ -544,6 +555,9 @@ Diagnostic notes:
   limits. `diagnostic_notes` may still exist as bundle-engine input, but the renderer should merge it into
   `注意事项`.
 - Do not dump raw tool logs in report content.
+- User-facing attention notes must be Chinese summaries. Do not expose raw diagnostic codes such as
+  `MEDIA_DOWNLOAD_FAILED` as visible titles; keep raw codes traceable in `diagnostics.json` or the evidence
+  index.
 - Blocking issues should stop substantive report writing and be reported as blockers with repair steps.
 
 Evidence attribution rules:
@@ -568,15 +582,16 @@ provider rule output. It records the semantic video type and the selected screen
   "rationale": "The transcript develops a long-form argument and refers to charts and market data.",
   "visual_policy": {
     "visual_recall": "high",
-    "visual_strategy": "all",
+    "visual_strategy": "auto",
     "max_screenshots": 0,
-    "reason": "Charts and data-heavy segments need full fixed-interval screenshot coverage."
+    "reason": "Charts and data-heavy segments need coarse baseline coverage plus targeted semantic anchors."
   }
 }
 ```
 
-`max_screenshots: 0` means no candidate screenshot cap. Use a positive value only when the run
-must trade visual completeness for time, disk space, or memory.
+When `extract-frames --plan visual_selection_plan.json` is used, `max_screenshots: 0` means no cap on the
+planned coarse+anchor candidate set. Use a positive value only when the run must trade visual completeness
+for time, disk space, or memory.
 
 ## slides.json
 
@@ -602,36 +617,43 @@ listed in `manifest.json` as a raw media artifact.
   },
   "extraction": {
     "strategy": "mixed",
-    "strategies": ["fixed_interval", "keyword_trigger"],
+    "strategies": ["fixed_interval", "semantic_anchor"],
     "visual_strategy": "auto",
-    "visual_recall": "medium",
-    "interval_seconds": 5,
+    "visual_recall": "high",
+    "interval_seconds": 8,
+    "planned_sampling": true,
+    "coarse_sampling": true,
     "max_screenshots": 0,
     "candidate_cap": null,
     "candidate_cap_unlimited": true,
-    "candidate_count": 346,
-    "planned_count_before_cap": 390,
+    "candidate_count": 145,
+    "planned_count_before_cap": 145,
     "sampled_due_to_cap": false,
     "skipped_due_to_cap": 0,
     "coverage": {
       "duration": 1729.0,
-      "interval_seconds": 5,
-      "expected_fixed_interval_count": 346,
+      "interval_seconds": 8,
+      "expected_fixed_interval_count": 130,
       "fixed_interval_coverage_complete": true,
       "candidate_cap_unlimited": true,
       "coverage_truncated": false,
       "first_timestamp": 0.0,
-      "last_timestamp": 1725.0
+      "last_timestamp": 1728.0
     },
     "fixed_interval": {
-      "candidate_count": 346,
+      "candidate_count": 130,
       "sampled_due_to_cap": false,
       "skipped_due_to_cap": 0
     },
     "keyword_trigger": {
-      "enabled": true,
-      "candidate_count": 44,
+      "enabled": false,
+      "candidate_count": 0,
       "skipped_count": 0
+    },
+    "semantic_anchor": {
+      "enabled": true,
+      "candidate_count": 15,
+      "semantic_anchor_count": 5
     },
     "scene_change": {
       "enabled": false,
@@ -647,9 +669,9 @@ listed in `manifest.json` as a raw media artifact.
       "id": "slide_0001",
       "timestamp": 12.5,
       "path": "screenshots/candidates/000012.5s_fixed.png",
-      "source_reasons": ["fixed_interval", "keyword_trigger"],
-      "keyword_matches": ["risk"],
-      "trigger_segment_start": 10.4,
+      "source_reasons": ["fixed_interval", "semantic_anchor"],
+      "anchor_id": "anchor_0001",
+      "anchor_label": "Result screen",
       "trigger_text": "Look at this risk chart.",
       "ocr_text": "",
       "ocr_confidence": null,

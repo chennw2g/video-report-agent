@@ -1,6 +1,6 @@
 # Current Status
 
-Last updated: 2026-06-14 22:58 +08:00
+Last updated: 2026-06-15 01:45 +08:00
 
 This file is the short project snapshot to read after context compaction. Update it after every material
 project change that affects capabilities, provider state, report contracts, validation status, known blockers,
@@ -24,14 +24,24 @@ external tool state, or recommended next steps.
 ## Git State
 
 - Current branch: `main`.
-- Current working tree: contains the current workflow-hardening changes until the next commit.
+- Current working tree: contains the current report metric/table, plan-guided screenshot extraction,
+  Xiaohongshu comments/transcription parallelization fixes, and baseline local-video provider until the
+  next commit.
 - Latest validation in this work session:
+  - `uv run pytest tests/test_report_renderer.py tests/test_visual_recall.py tests/test_xiaohongshu_provider.py`:
+    26 passed after the fixed header metric, planned screenshot extraction, and Xiaohongshu parallelization
+    changes.
   - `uv run ruff check`: passed.
-  - `uv run pytest`: 61 passed.
+  - `uv run pytest`: 64 passed.
   - `uv run video-bundle-agent doctor`: warning only; FunASR and whisper.cpp are available, optional
     `tesseract` is missing. `faster-whisper` is no longer part of the checked route.
   - `uv build`: passed and produced ignored local `dist/` wheel/sdist artifacts.
+- Global skill sync:
+  - `C:\Users\chenn\.codex\skills\video-report\SKILL.md` matches the repo copy.
+  - `C:\Users\chenn\.codex\skills\video-report\scripts\render_report.py` matches the repo copy.
+  - `C:\Users\chenn\.codex\skills\video-bundle-prep\SKILL.md` matches the repo copy.
 - Latest commits:
+  - `8518379 Harden report workflow and provider normalization`
   - `4ca5b4d Use GPU whisper turbo for English transcription`
   - `28d540c Add ASR benchmark tooling`
   - `b8a66a8 Prefer turbo whisper model and add FunASR extra`
@@ -44,13 +54,19 @@ external tool state, or recommended next steps.
 - YouTube: working provider with metadata, yt-dlp chapters when available, subtitles/transcription fallback,
   bounded top comments, audience feedback, retained working media, local thumbnail asset, URL normalization,
   visual recall, timings, and report smoke coverage.
-- Bilibili: API-first provider with metadata, native player `view_points` chapters, playurl media,
-  transcription, visual recall, top-liked bounded comments, local thumbnail asset, `b23.tv` short-link
-  normalization before API collection, timings, and report smoke coverage. Danmaku is disabled by default.
+- Bilibili: API-first provider with metadata, native player `view_points` chapters, player subtitle
+  extraction through `bilibili-api-python`/`x/player/v2`, playurl media, language-aware local transcription
+  fallback, automatic-subtitle comparison transcript when needed, visual recall, top-liked bounded comments,
+  local thumbnail asset, `b23.tv` short-link normalization before API collection, timings, and report smoke
+  coverage. Danmaku is disabled by default.
 - Xiaohongshu: lightweight provider with short-link resolution, HTML note extraction, media download,
   local thumbnail asset, transcription, visual recall, timings, and MediaCrawler-only bounded top-level
   comments through the managed external MediaCrawler runtime.
-- Local video: skeleton/basic provider remains lower priority.
+- Local video: baseline provider now imports a local media file into `raw/media/`, reads ffprobe metadata,
+  extracts local audio, uses the shared language-aware transcription route, optionally extracts visual
+  recall screenshots, writes `audience_feedback.json` with comments marked unavailable, and produces normal
+  bundle/readiness artifacts. It intentionally has no platform comments, online engagement metrics, or
+  native chapters unless the user supplies separate source metadata later.
 
 ## Report Output State
 
@@ -80,13 +96,25 @@ external tool state, or recommended next steps.
 - `timings.json` records stage timing across provider collection, frame extraction, report input
   preparation, and report rendering so slow stages can be diagnosed without external Stopwatch notes.
 - Header title and metric values may auto-reduce font size to fit target lines without clipping or ellipses.
-- Header metric labels such as `平台`, `频道`, and `发布时间` are anchored in the bottom label area so value
-  auto-shrinking does not move labels out of alignment.
+- Header metric labels are anchored in the bottom label area so value auto-shrinking does not move labels out
+  of alignment.
+- Header metric cards must use this fixed order: `平台`, `作者`, `发布时间`, `视频时长`, `播放量`,
+  `评论数`, `点赞数`, `分享数`. Do not add a report-type card by default. If a metric is unavailable, show
+  `未获取`; do not substitute share count for like count or any other engagement metric.
+- Content maps and AI-organized tables are centered by default in the renderer and visual contract.
+- User-facing attention notes and renderer-added diagnostics must be Chinese summaries. Raw diagnostic codes
+  such as `MEDIA_DOWNLOAD_FAILED` should remain traceable through `diagnostics.json` or the evidence index,
+  but should not appear as visible report titles.
 - If `source_chapters.json` exists, reports must use native source chapters as the content-map/chapter basis.
   Bilibili `metadata.pages` is page/part metadata only, not original chapters.
-- `video-bundle-prep` now writes an agent-authored `visual_selection_plan.json` after classification and
-  transcript reading. `select-evidence --plan` and `prepare-report --plan` use that plan to prefer semantic
-  anchors before built-in keyword and timeline fallback selection.
+- `video-bundle-prep` writes an agent-authored `visual_selection_plan.json` after classification and
+  transcript reading. `extract-frames --plan` uses it for coarse baseline sampling plus targeted
+  semantic-anchor screenshots; `select-evidence --plan` and `prepare-report --plan` use the same plan for
+  semantic selection.
+- Planned screenshot extraction uses coarse intervals `low=30s`, `medium=15s`, and `high=8s`. Without a
+  plan, the lower-level legacy intervals remain `low=15s`, `medium=5s`, and `high=2s`.
+- Xiaohongshu provider now runs MediaCrawler comment collection and local audio transcription in parallel
+  after media download, while keeping separate `comments` and `audio_transcription` stage timings.
 - Local transcription is language-aware:
   - The provider first cuts a short 16 kHz WAV probe and runs whisper.cpp language detection against actual
     speech audio.

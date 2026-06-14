@@ -11,6 +11,7 @@ from video_bundle_agent.bundle.schema import (
     Manifest,
     SourceInfo,
 )
+from video_bundle_agent.bundle.timings import StageTimings
 from video_bundle_agent.bundle.writer import BundleArtifacts, finalize_bundle, write_json
 from video_bundle_agent.diagnostics.models import DiagnosticLog
 from video_bundle_agent.media.visual_recall import create_visual_recall_slides
@@ -25,10 +26,12 @@ _BUNDLE_ARTIFACT_FIELDS: dict[str, str] = {
     "danmaku_path": "danmaku",
     "audience_feedback_path": "audience_feedback",
     "media_path": "media",
+    "thumbnail_path": "thumbnail",
     "slides_path": "slides",
     "working_video_path": "raw_media",
     "working_audio_path": "raw_audio",
     "content_profile_path": "content_profile",
+    "timings_path": "timings",
 }
 
 
@@ -191,6 +194,7 @@ def extract_frames_for_bundle(
     max_screenshots: int = 0,
 ) -> dict[str, Any]:
     bundle_dir = bundle_dir.resolve()
+    timings = StageTimings.load(bundle_dir / "timings.json")
     bundle = _load_bundle(bundle_dir)
     manifest = _load_manifest(bundle_dir, bundle)
     diagnostics = _load_diagnostics(bundle_dir, bundle)
@@ -219,37 +223,45 @@ def extract_frames_for_bundle(
             _relative_to_bundle(bundle_dir, working_video),
         )
         try:
-            slides_payload, screenshot_paths, visual_warnings = create_visual_recall_slides(
-                source=bundle.source,
-                source_url=bundle.source.source_url,
-                video_path=working_video,
-                output_dir=bundle_dir,
-                visual_recall=visual_recall,
-                visual_strategy=visual_strategy,
-                max_screenshots=max_screenshots,
-                transcript_segments=_load_transcript_segments(bundle_dir, bundle),
-            )
-            _add_visual_warnings(diagnostics, visual_warnings)
-            _remove_stale_candidate_screenshots(
-                bundle_dir=bundle_dir,
-                current_screenshot_paths=screenshot_paths,
-            )
-            write_json(bundle_dir / "slides.json", slides_payload)
-            artifacts.add("slides_path", "slides", "slides.json")
-            for index, screenshot_path in enumerate(screenshot_paths, start=1):
-                artifacts.add(
-                    f"screenshot_{index:04d}",
-                    "screenshot",
-                    _relative_to_bundle(bundle_dir, screenshot_path),
+            with timings.stage(
+                "extract_frames",
+                {
+                    "visual_recall": visual_recall,
+                    "visual_strategy": visual_strategy,
+                    "max_screenshots": max_screenshots,
+                },
+            ):
+                slides_payload, screenshot_paths, visual_warnings = create_visual_recall_slides(
+                    source=bundle.source,
+                    source_url=bundle.source.source_url,
+                    video_path=working_video,
+                    output_dir=bundle_dir,
+                    visual_recall=visual_recall,
+                    visual_strategy=visual_strategy,
+                    max_screenshots=max_screenshots,
+                    transcript_segments=_load_transcript_segments(bundle_dir, bundle),
                 )
-            capabilities.has_slides = bool(screenshot_paths)
-            if not screenshot_paths:
-                diagnostics.add(
-                    code="FRAME_EXTRACTION_FAILED",
-                    severity="error",
-                    stage="visual_recall",
-                    message="Frame extraction produced no screenshots.",
+                _add_visual_warnings(diagnostics, visual_warnings)
+                _remove_stale_candidate_screenshots(
+                    bundle_dir=bundle_dir,
+                    current_screenshot_paths=screenshot_paths,
                 )
+                write_json(bundle_dir / "slides.json", slides_payload)
+                artifacts.add("slides_path", "slides", "slides.json")
+                for index, screenshot_path in enumerate(screenshot_paths, start=1):
+                    artifacts.add(
+                        f"screenshot_{index:04d}",
+                        "screenshot",
+                        _relative_to_bundle(bundle_dir, screenshot_path),
+                    )
+                capabilities.has_slides = bool(screenshot_paths)
+                if not screenshot_paths:
+                    diagnostics.add(
+                        code="FRAME_EXTRACTION_FAILED",
+                        severity="error",
+                        stage="visual_recall",
+                        message="Frame extraction produced no screenshots.",
+                    )
         except FileNotFoundError as error:
             diagnostics.add(
                 code=_diagnostic_code_for_missing_tool(error),
@@ -267,6 +279,9 @@ def extract_frames_for_bundle(
                 details={"exception": type(error).__name__},
             )
             capabilities.has_slides = False
+
+    timings.write(bundle_dir / "timings.json")
+    artifacts.add("timings_path", "timings", "timings.json")
 
     if diagnostics.status == "error" and not _has_diagnostic_code(diagnostics, "BUNDLE_INCOMPLETE"):
         diagnostics.add(
@@ -296,6 +311,7 @@ def extract_frames_for_bundle(
         "output_dir": str(bundle_dir),
         "bundle_path": str(bundle_dir / "bundle.json"),
         "slides_path": str(bundle_dir / "slides.json") if updated_bundle.slides_path else None,
+        "timings_path": str(bundle_dir / "timings.json"),
         "diagnostics_path": str(bundle_dir / "diagnostics.json"),
         "screenshot_count": len(screenshot_paths),
         "readiness": readiness,

@@ -14,6 +14,7 @@ from xhs import XhsClient
 
 from video_bundle_agent.bundle.readiness import evaluate_bundle_readiness
 from video_bundle_agent.bundle.schema import Capabilities, SourceInfo
+from video_bundle_agent.bundle.timings import StageTimings
 from video_bundle_agent.bundle.writer import (
     BundleArtifacts,
     finalize_bundle,
@@ -27,6 +28,8 @@ from video_bundle_agent.media.transcription import (
     transcribe_audio_for_language,
 )
 from video_bundle_agent.media.visual_recall import create_visual_recall_slides
+from video_bundle_agent.providers.assets import attach_thumbnail_asset
+from video_bundle_agent.providers.url_resolution import normalize_xiaohongshu_url
 from video_bundle_agent.tools.process import CommandError, run_command
 
 XHS_USER_AGENT = (
@@ -159,14 +162,11 @@ def _resolve_source_url(source_url: str, cookie_string: str) -> str:
     host = urlparse(source_url if source_url.startswith("http") else f"https://{source_url}").netloc
     if "xhslink.com" not in host.lower():
         return source_url
-    headers = {"User-Agent": XHS_USER_AGENT, "Referer": "https://www.xiaohongshu.com/"}
-    if cookie_string:
-        headers["Cookie"] = cookie_string
-    with httpx.Client(follow_redirects=True, timeout=20, headers=headers) as client:
-        response = client.get(source_url)
-        response.raise_for_status()
-        resolved_url = str(response.url)
-        return _redirect_path_from_login_url(resolved_url) or resolved_url
+    resolved = normalize_xiaohongshu_url(
+        source_url,
+        cookie_string=cookie_string,
+    ).working_url
+    return _redirect_path_from_login_url(resolved) or resolved
 
 
 def _fetch_note_html(url: str, cookie_string: str) -> str:
@@ -921,6 +921,7 @@ def analyze_xiaohongshu(
     force_transcription: bool = False,
     cookies: Path | None = None,
 ) -> dict[str, Any]:
+    timings = StageTimings()
     diagnostics = DiagnosticLog()
     artifacts = BundleArtifacts()
     capabilities = Capabilities(has_danmaku=False)
@@ -957,85 +958,100 @@ def analyze_xiaohongshu(
     working_video: Path | None = None
 
     try:
-        try:
-            resolved_url, note_id, html, note, extractor = _fetch_note_data(
-                source_url=source_url,
-                cookie_string=cookie_string,
-            )
-        except Exception as html_error:  # noqa: BLE001
-            resolved_url = _resolve_source_url(source_url, cookie_string)
-            note_id = _extract_note_id_from_url(resolved_url)
-            fallback_source = SourceInfo(
+        with timings.stage("metadata"):
+            try:
+                resolved_url, note_id, html, note, extractor = _fetch_note_data(
+                    source_url=source_url,
+                    cookie_string=cookie_string,
+                )
+            except Exception as html_error:  # noqa: BLE001
+                resolved_url = _resolve_source_url(source_url, cookie_string)
+                note_id = _extract_note_id_from_url(resolved_url)
+                fallback_source = SourceInfo(
+                    platform="xiaohongshu",
+                    source_url=source_url,
+                    resolved_url=resolved_url,
+                    source_id=note_id,
+                )
+                note = _fetch_mediacrawler_note_payload(
+                    note_url=resolved_url,
+                    output_dir=output_dir,
+                    max_comments=max_comments if fetch_comments else 0,
+                )
+                html = ""
+                extractor = "mediacrawler_detail_jsonl"
+                source = fallback_source
+                diagnostics.add(
+                    code="METADATA_HTML_UNAVAILABLE",
+                    severity="warning",
+                    stage="metadata",
+                    message=(
+                        "Xiaohongshu note HTML did not expose note data; "
+                        "MediaCrawler detail output was used."
+                    ),
+                    details={"html_error": repr(html_error)},
+                )
+            source = SourceInfo(
                 platform="xiaohongshu",
                 source_url=source_url,
                 resolved_url=resolved_url,
                 source_id=note_id,
             )
-            note = _fetch_mediacrawler_note_payload(
-                note_url=resolved_url,
+            raw_dir = output_dir / "raw" / "xiaohongshu"
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            write_text(raw_dir / "note.html", html)
+            write_json(raw_dir / "note.raw.json", note)
+            artifacts.add(
+                "raw_xiaohongshu_html_path",
+                "raw_provider",
+                "raw/xiaohongshu/note.html",
+            )
+            artifacts.add(
+                "raw_xiaohongshu_note_path",
+                "raw_provider",
+                "raw/xiaohongshu/note.raw.json",
+            )
+            metadata = normalize_metadata(source=source, note=note, extractor=extractor)
+            attach_thumbnail_asset(
+                metadata=metadata,
                 output_dir=output_dir,
-                max_comments=max_comments if fetch_comments else 0,
+                artifacts=artifacts,
+                diagnostics=diagnostics,
+                source_id=source.source_id or "xiaohongshu-note",
+                referer=source.resolved_url or source.source_url,
+                cookie_string=cookie_string,
             )
-            html = ""
-            extractor = "mediacrawler_detail_jsonl"
-            source = fallback_source
-            diagnostics.add(
-                code="METADATA_HTML_UNAVAILABLE",
-                severity="warning",
-                stage="metadata",
-                message=(
-                    "Xiaohongshu note HTML did not expose note data; "
-                    "MediaCrawler detail output was used."
-                ),
-                details={"html_error": repr(html_error)},
-            )
-        source = SourceInfo(
-            platform="xiaohongshu",
-            source_url=source_url,
-            resolved_url=resolved_url,
-            source_id=note_id,
-        )
-        raw_dir = output_dir / "raw" / "xiaohongshu"
-        raw_dir.mkdir(parents=True, exist_ok=True)
-        write_text(raw_dir / "note.html", html)
-        write_json(raw_dir / "note.raw.json", note)
-        artifacts.add("raw_xiaohongshu_html_path", "raw_provider", "raw/xiaohongshu/note.html")
-        artifacts.add(
-            "raw_xiaohongshu_note_path",
-            "raw_provider",
-            "raw/xiaohongshu/note.raw.json",
-        )
-        metadata = normalize_metadata(source=source, note=note, extractor=extractor)
-        write_json(output_dir / "metadata.json", metadata)
-        artifacts.add("metadata_path", "metadata", "metadata.json")
-        capabilities.has_metadata = True
+            write_json(output_dir / "metadata.json", metadata)
+            artifacts.add("metadata_path", "metadata", "metadata.json")
+            capabilities.has_metadata = True
 
         media_payload = _media_payload(source=source, note=note)
         write_json(output_dir / "media.json", media_payload)
         artifacts.add("media_path", "media", "media.json")
         try:
-            working_video, media_paths, media_warnings = _download_media_files(
-                output_dir=output_dir,
-                source_id=source.source_id or "xiaohongshu-note",
-                media=media_payload,
-                cookie_string=cookie_string,
-            )
-            for warning in media_warnings:
-                diagnostics.add(
-                    code=str(warning["code"]),
-                    severity=warning["severity"],  # type: ignore[arg-type]
-                    stage=str(warning["stage"]),
-                    message=str(warning["message"]),
-                    details=warning.get("details") or {},
+            with timings.stage("media_download"):
+                working_video, media_paths, media_warnings = _download_media_files(
+                    output_dir=output_dir,
+                    source_id=source.source_id or "xiaohongshu-note",
+                    media=media_payload,
+                    cookie_string=cookie_string,
                 )
-            for index, media_path in enumerate(media_paths, start=1):
-                kind = "raw_media"
-                key = (
-                    "working_video_path"
-                    if media_path == working_video
-                    else f"xhs_media_{index:04d}"
-                )
-                artifacts.add(key, kind, media_path.relative_to(output_dir).as_posix())
+                for warning in media_warnings:
+                    diagnostics.add(
+                        code=str(warning["code"]),
+                        severity=warning["severity"],  # type: ignore[arg-type]
+                        stage=str(warning["stage"]),
+                        message=str(warning["message"]),
+                        details=warning.get("details") or {},
+                    )
+                for index, media_path in enumerate(media_paths, start=1):
+                    kind = "raw_media"
+                    key = (
+                        "working_video_path"
+                        if media_path == working_video
+                        else f"xhs_media_{index:04d}"
+                    )
+                    artifacts.add(key, kind, media_path.relative_to(output_dir).as_posix())
         except Exception as error:  # noqa: BLE001
             _diagnose_failure(
                 diagnostics,
@@ -1055,14 +1071,15 @@ def analyze_xiaohongshu(
 
     if fetch_comments and capabilities.has_metadata:
         try:
-            comments_payload = _fetch_mediacrawler_comments_payload(
-                source=source,
-                output_dir=output_dir,
-                max_comments=max_comments,
-            )
-            write_json(output_dir / "comments.json", comments_payload)
-            artifacts.add("comments_path", "comments", "comments.json")
-            capabilities.has_comments = bool(comments_payload["items"])
+            with timings.stage("comments", {"max_comments": max_comments}):
+                comments_payload = _fetch_mediacrawler_comments_payload(
+                    source=source,
+                    output_dir=output_dir,
+                    max_comments=max_comments,
+                )
+                write_json(output_dir / "comments.json", comments_payload)
+                artifacts.add("comments_path", "comments", "comments.json")
+                capabilities.has_comments = bool(comments_payload["items"])
         except Exception as error:  # noqa: BLE001
             diagnostics.add(
                 code="COMMENTS_UNAVAILABLE",
@@ -1075,20 +1092,24 @@ def analyze_xiaohongshu(
 
     if working_video is not None and (force_transcription or not transcript_segments):
         try:
-            transcript_segments = _transcribe_working_video(
-                source=source,
-                output_dir=output_dir,
-                artifacts=artifacts,
-                working_video=working_video,
-            )
-            capabilities.has_transcript = bool(transcript_segments)
-            if not transcript_segments:
-                diagnostics.add(
-                    code="TRANSCRIPTION_UNAVAILABLE",
-                    severity="warning",
-                    stage="audio_transcription",
-                    message="Local audio transcription did not produce usable transcript segments.",
+            with timings.stage("audio_transcription"):
+                transcript_segments = _transcribe_working_video(
+                    source=source,
+                    output_dir=output_dir,
+                    artifacts=artifacts,
+                    working_video=working_video,
                 )
+                capabilities.has_transcript = bool(transcript_segments)
+                if not transcript_segments:
+                    diagnostics.add(
+                        code="TRANSCRIPTION_UNAVAILABLE",
+                        severity="warning",
+                        stage="audio_transcription",
+                        message=(
+                            "Local audio transcription did not produce usable "
+                            "transcript segments."
+                        ),
+                    )
         except Exception as error:  # noqa: BLE001
             _diagnose_failure(
                 diagnostics,
@@ -1107,33 +1128,37 @@ def analyze_xiaohongshu(
 
     if working_video is not None and visual_recall != "none":
         try:
-            slides_payload, screenshot_paths, visual_warnings = create_visual_recall_slides(
-                source=source,
-                source_url=source.source_url,
-                video_path=working_video,
-                output_dir=output_dir,
-                visual_recall=visual_recall,
-                visual_strategy=visual_strategy,
-                max_screenshots=max_screenshots,
-                transcript_segments=transcript_segments,
-            )
-            for warning in visual_warnings:
-                diagnostics.add(
-                    code=str(warning["code"]),
-                    severity=warning["severity"],  # type: ignore[arg-type]
-                    stage=str(warning["stage"]),
-                    message=str(warning["message"]),
-                    details=warning.get("details") or {},
+            with timings.stage(
+                "visual_recall",
+                {"visual_recall": visual_recall, "visual_strategy": visual_strategy},
+            ):
+                slides_payload, screenshot_paths, visual_warnings = create_visual_recall_slides(
+                    source=source,
+                    source_url=source.source_url,
+                    video_path=working_video,
+                    output_dir=output_dir,
+                    visual_recall=visual_recall,
+                    visual_strategy=visual_strategy,
+                    max_screenshots=max_screenshots,
+                    transcript_segments=transcript_segments,
                 )
-            write_json(output_dir / "slides.json", slides_payload)
-            artifacts.add("slides_path", "slides", "slides.json")
-            for index, screenshot_path in enumerate(screenshot_paths, start=1):
-                artifacts.add(
-                    f"screenshot_{index:04d}",
-                    "screenshot",
-                    screenshot_path.relative_to(output_dir).as_posix(),
-                )
-            capabilities.has_slides = bool(screenshot_paths)
+                for warning in visual_warnings:
+                    diagnostics.add(
+                        code=str(warning["code"]),
+                        severity=warning["severity"],  # type: ignore[arg-type]
+                        stage=str(warning["stage"]),
+                        message=str(warning["message"]),
+                        details=warning.get("details") or {},
+                    )
+                write_json(output_dir / "slides.json", slides_payload)
+                artifacts.add("slides_path", "slides", "slides.json")
+                for index, screenshot_path in enumerate(screenshot_paths, start=1):
+                    artifacts.add(
+                        f"screenshot_{index:04d}",
+                        "screenshot",
+                        screenshot_path.relative_to(output_dir).as_posix(),
+                    )
+                capabilities.has_slides = bool(screenshot_paths)
         except FileNotFoundError as error:
             message = str(error).lower()
             if "ffmpeg" in message:
@@ -1157,14 +1182,15 @@ def analyze_xiaohongshu(
                 error=error,
             )
 
-    audience_feedback = _build_audience_feedback(
-        metadata=metadata,
-        comments=comments_payload,
-        source=source,
-    )
-    write_json(output_dir / "audience_feedback.json", audience_feedback)
-    artifacts.add("audience_feedback_path", "audience_feedback", "audience_feedback.json")
-    capabilities.has_audience_feedback = True
+    with timings.stage("audience_feedback"):
+        audience_feedback = _build_audience_feedback(
+            metadata=metadata,
+            comments=comments_payload,
+            source=source,
+        )
+        write_json(output_dir / "audience_feedback.json", audience_feedback)
+        artifacts.add("audience_feedback_path", "audience_feedback", "audience_feedback.json")
+        capabilities.has_audience_feedback = True
 
     if diagnostics.status == "error":
         diagnostics.add(
@@ -1173,6 +1199,9 @@ def analyze_xiaohongshu(
             stage="bundle",
             message="Bundle was written with missing required provider data.",
         )
+
+    timings.write(output_dir / "timings.json")
+    artifacts.add("timings_path", "timings", "timings.json")
 
     bundle = finalize_bundle(
         output_dir=output_dir,
@@ -1198,6 +1227,7 @@ def analyze_xiaohongshu(
         "report_ready": readiness["report_ready"],
         "output_dir": str(output_dir),
         "bundle_path": str(output_dir / "bundle.json"),
+        "timings_path": str(output_dir / "timings.json"),
         "diagnostics_path": str(output_dir / "diagnostics.json"),
         "readiness": readiness,
         "capabilities": bundle.capabilities.model_dump(mode="json"),

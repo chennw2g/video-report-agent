@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import html
 import json
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
+import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -551,9 +555,123 @@ def read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _iter_text_values(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        texts: list[str] = []
+        for item in value.values():
+            texts.extend(_iter_text_values(item))
+        return texts
+    if isinstance(value, list | tuple):
+        texts = []
+        for item in value:
+            texts.extend(_iter_text_values(item))
+        return texts
+    return []
+
+
+def suspect_encoding_reasons(content: dict[str, Any]) -> list[str]:
+    joined = "\n".join(_iter_text_values(content))
+    if not joined:
+        return []
+    reasons: list[str] = []
+    if "\ufffd" in joined:
+        reasons.append("replacement character U+FFFD was found")
+    if re.search(r"\?{4,}", joined):
+        reasons.append("long runs of question marks were found")
+    question_count = joined.count("?")
+    if len(joined) >= 500 and question_count >= 30 and question_count / len(joined) >= 0.02:
+        reasons.append("question-mark density is unusually high")
+    return reasons
+
+
 def write_text(path: Path, value: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(value, encoding="utf-8", newline="\n")
+
+
+def append_timing(
+    bundle_dir: Path,
+    *,
+    name: str,
+    started_at: str,
+    elapsed_seconds: float,
+    status: str,
+    details: dict[str, Any],
+) -> None:
+    path = bundle_dir / "timings.json"
+    if path.exists():
+        try:
+            payload = read_json(path)
+        except Exception:  # noqa: BLE001
+            payload = {}
+    else:
+        payload = {}
+    stages = [item for item in payload.get("stages") or [] if isinstance(item, dict)]
+    stages.append(
+        {
+            "name": name,
+            "status": status,
+            "started_at": started_at,
+            "ended_at": datetime.now(UTC).isoformat(),
+            "elapsed_seconds": round(elapsed_seconds, 3),
+            "details": details,
+        }
+    )
+    total = round(sum(float(stage.get("elapsed_seconds") or 0) for stage in stages), 3)
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "0.1.0",
+                "generated_at": datetime.now(UTC).isoformat(),
+                "total_recorded_seconds": total,
+                "stages": stages,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    refresh_manifest_timing_entry(path)
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def refresh_manifest_timing_entry(timings_path: Path) -> None:
+    manifest_path = timings_path.parent / "manifest.json"
+    if not manifest_path.exists():
+        return
+    try:
+        manifest = read_json(manifest_path)
+    except Exception:  # noqa: BLE001
+        return
+    files = manifest.get("files")
+    if not isinstance(files, list):
+        return
+    entry = {
+        "path": timings_path.name,
+        "kind": "timings",
+        "size_bytes": timings_path.stat().st_size,
+        "sha256": sha256_file(timings_path),
+    }
+    for index, item in enumerate(files):
+        if isinstance(item, dict) and item.get("path") == timings_path.name:
+            files[index] = entry
+            break
+    else:
+        files.append(entry)
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
 def text(value: Any) -> str:
@@ -814,16 +932,21 @@ def pick_hero_visual(
     hero = normalize_visual(content.get("hero_visual"))
     if hero.get("image_path"):
         return hero
-    visuals = collect_visuals(content)
-    if visuals:
-        return visuals[0]
-    thumbnail = metadata.get("thumbnail") or metadata.get("thumbnail_url")
+    thumbnail = (
+        metadata.get("thumbnail_path")
+        or metadata.get("cover_path")
+        or metadata.get("thumbnail")
+        or metadata.get("thumbnail_url")
+    )
     if thumbnail:
         return {
             "image_path": thumbnail,
             "title": "视频封面",
             "caption": metadata.get("title") or "",
         }
+    visuals = collect_visuals(content)
+    if visuals:
+        return visuals[0]
     bundle = read_json(bundle_dir / "bundle.json")
     source = bundle.get("source") if isinstance(bundle, dict) else {}
     return {
@@ -1768,13 +1891,39 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--png-width", type=int, default=1220)
     parser.add_argument("--chrome", type=str, default=None)
     parser.add_argument("--no-pdf", action="store_true")
+    parser.add_argument(
+        "--allow-suspect-encoding",
+        action="store_true",
+        help="Render even when report content looks like it was damaged by text encoding.",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
+    run_started_at = datetime.now(UTC).isoformat()
+    run_started = time.perf_counter()
     args = parse_args(argv or sys.argv[1:])
     bundle_dir = args.bundle_dir.resolve()
     content, content_path = load_content(bundle_dir, args.content, args.mode)
+    if not args.allow_suspect_encoding:
+        reasons = suspect_encoding_reasons(content)
+        if reasons:
+            append_timing(
+                bundle_dir,
+                name="render_report",
+                started_at=run_started_at,
+                elapsed_seconds=time.perf_counter() - run_started,
+                status="error",
+                details={"content_path": str(content_path), "reasons": reasons},
+            )
+            print(
+                (
+                    f"Refusing to render suspected mojibake content in {content_path}: "
+                    + "; ".join(reasons)
+                ),
+                file=sys.stderr,
+            )
+            return 2
     mode = detect_mode(content, content_path, args.mode)
     html_path = args.html or default_html_path(bundle_dir, mode, content_path)
     pdf_path = args.pdf or default_pdf_path(bundle_dir, mode, content_path)
@@ -1809,7 +1958,16 @@ def main(argv: list[str] | None = None) -> int:
     print(json.dumps(status, ensure_ascii=False, indent=2))
     pdf_ok = args.no_pdf or pdf_result["exported"]
     png_ok = not args.png or png_result["exported"]
-    return 0 if pdf_ok and png_ok else 2
+    exit_code = 0 if pdf_ok and png_ok else 2
+    append_timing(
+        bundle_dir,
+        name="render_report",
+        started_at=run_started_at,
+        elapsed_seconds=time.perf_counter() - run_started,
+        status="ok" if exit_code == 0 else "error",
+        details=status,
+    )
+    return exit_code
 
 
 if __name__ == "__main__":

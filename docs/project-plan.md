@@ -43,6 +43,8 @@ Each bundle should contain:
 - `content_profile.json`: Codex-authored video type tags and visual recall policy when the prep skill runs.
 - `report.input.json`: compact evidence bridge for Codex report writing, generated after classification and
   visual evidence extraction. It is mode-independent.
+- `timings.json`: stage timing log for provider collection, frame extraction, report input preparation, and
+  report rendering.
 - `report.content.draft.json`: renderer-compatible scaffold only, not final report analysis.
 - `report.content.quick.json` / `report.zh.quick.html` / `report.zh.quick.png`: default quick report output.
 - `report.content.deep.json` / `report.zh.deep.html` / `report.zh.deep.png`: explicit deep report output.
@@ -111,6 +113,9 @@ Each bundle should contain:
   top-level comments through MediaCrawler's official `xhs detail` jsonl workflow. Observed account/session
   risk responses such as `300011` are recorded as `PERMISSION_REQUIRED`; comments remain optional evidence
   and must not block the main content bundle.
+- Provider hardening: normalize common short/share URLs before platform API collection, keep the original
+  input URL in bundle source metadata, download source thumbnails/covers to `raw/thumbnail/`, and write
+  lightweight timing diagnostics to `timings.json`.
 - Local video provider skeleton.
 
 ## Implementation Order

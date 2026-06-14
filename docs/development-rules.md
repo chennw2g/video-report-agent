@@ -15,6 +15,14 @@ These rules keep `video-bundle-agent` focused on producing reliable, inspectable
 - Before creating a commit, check whether `docs/current-status.md` needs an update alongside the changed code,
   docs, tests, and skills.
 
+## Windows Configuration Logging
+
+- When Codex changes Windows current-user or system-level settings for this project, record the change in
+  `D:\W\Codex\windows-change-log.md`.
+- The log entry must include date/time, scope, exact file or setting changed, reason, expected impact, and
+  rollback notes.
+- This is separate from `D:\W\Codex\software-install-log.md`, which is for software and environment installs.
+
 ## Product Boundary
 
 - The user-facing target is a Codex plugin-shaped workflow: link or local file in, prepared bundle evidence,
@@ -91,6 +99,18 @@ These rules keep `video-bundle-agent` focused on producing reliable, inspectable
 - Bundle indexes may still store normalized relative paths for user-facing artifacts; the absolute-path rule
   applies to subprocess invocation boundaries.
 
+## URL And Source Normalization
+
+- Providers should normalize known short/share URL forms before platform-specific API collection while
+  preserving the original user input in `source.source_url`.
+- YouTube short forms such as `youtu.be`, `/shorts/`, and `/embed/` should normalize to a canonical
+  `https://www.youtube.com/watch?v=<id>` working URL before yt-dlp calls.
+- Bilibili `b23.tv` links should be resolved before the `bilibili-api-python` path so BV/AV/CID, chapters,
+  comments, and API media download do not depend on yt-dlp fallback side effects.
+- Xiaohongshu `xhslink.com` links should use the provider short-link resolver and retain the existing
+  `/login?redirectPath=...` recovery behavior.
+- If URL normalization fails, record a warning diagnostic and continue with the original URL when possible.
+
 ## Audience Feedback Rules
 
 - Default comment collection is top 100 by `like_count` descending for every platform that supports
@@ -158,6 +178,11 @@ These rules keep `video-bundle-agent` focused on producing reliable, inspectable
   preserves earlier operations so staged runs remain auditable.
 - Raw provider files may be retained under `raw/` for debugging and audit.
 - Raw files are not the primary report input, but retained working video/audio are required for staged transcription and frame extraction.
+- Providers should download platform thumbnails/covers when `metadata.thumbnail` is available, store them
+  under `raw/thumbnail/`, write `metadata.thumbnail_path`, and list the file as a `thumbnail` artifact.
+- `timings.json` should record stage elapsed time for provider collection, frame extraction, report input
+  preparation, and report rendering. Timing instrumentation must be lightweight and must not change source
+  collection scope.
 - Large raw HTML/API/video/audio dumps require an explicit option before implementation.
 - Do not invent normalized files from missing provider data; record the missing artifact in diagnostics.
 
@@ -210,6 +235,9 @@ These rules keep `video-bundle-agent` focused on producing reliable, inspectable
 - `quick` reports are not required to include images in every section. They may include a cover/thumbnail
   as the main visual in the video overview, and should embed timestamp screenshots directly inside the
   relevant overview or core-point discussion when the image supports that claim.
+- Report hero visuals should prefer an explicit content `hero_visual`, then the platform thumbnail/cover,
+  then a representative frame from body visual evidence. Do not let the first inline screenshot silently
+  replace a valid source cover in the title/header area.
 - Avoid a standalone "key image gallery" in `quick`; visuals should sit next to the point they explain.
 - `quick` and `deep` should both include the same compact multi-dimensional rating graphic, such as a
   radar chart. This rating graphic should be the first content module after the top basic/source
@@ -281,6 +309,13 @@ These rules keep `video-bundle-agent` focused on producing reliable, inspectable
   and deterministic screenshot matching.
 - `report.input.json` is an index into evidence. The final report workflow must still read the full transcript
   through `transcript.txt` or `transcript.segments.json` before writing mode-specific report content JSON.
+- Report rendering should refuse suspected encoding-damaged content by default, especially JSON that shows
+  replacement characters or long/high-density question-mark runs. Fix the upstream writer or rerun with a
+  UTF-8-safe path instead of publishing a garbled report.
+- Final `report.content.<mode>.json` files with Chinese text must not be written through PowerShell pipes,
+  here-strings, `Set-Content`, or other shell text paths whose encoding depends on the active console.
+  Use `apply_patch` for manual report content edits or a project Python writer that opens files with
+  `encoding="utf-8"`. The renderer's mojibake check is only a final guard, not the primary writing path.
 
 ## Minimum Evidence For Reports
 

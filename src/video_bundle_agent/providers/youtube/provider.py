@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
@@ -6,6 +6,7 @@ from typing import Any
 
 from video_bundle_agent.bundle.readiness import evaluate_bundle_readiness
 from video_bundle_agent.bundle.schema import Capabilities, SourceInfo
+from video_bundle_agent.bundle.timings import StageTimings
 from video_bundle_agent.bundle.transcript_compare import write_transcript_comparison
 from video_bundle_agent.bundle.writer import (
     BundleArtifacts,
@@ -27,6 +28,8 @@ from video_bundle_agent.media.ytdlp import (
     dump_single_json,
     write_subtitles,
 )
+from video_bundle_agent.providers.assets import attach_thumbnail_asset
+from video_bundle_agent.providers.url_resolution import normalize_youtube_url
 from video_bundle_agent.providers.youtube.comments import normalize_comments
 from video_bundle_agent.providers.youtube.transcript import parse_subtitle, select_subtitle_file
 from video_bundle_agent.tools.process import CommandError
@@ -466,6 +469,7 @@ def analyze_youtube(
     cookies: Path | None = None,
     cookies_from_browser: str | None = None,
 ) -> dict[str, Any]:
+    timings = StageTimings()
     diagnostics = DiagnosticLog()
     artifacts = BundleArtifacts()
     capabilities = Capabilities(has_danmaku=False)
@@ -473,37 +477,60 @@ def analyze_youtube(
     raw_media_dir = output_dir / "raw" / "media"
     raw_audio_dir = output_dir / "raw" / "audio"
     raw_transcription_dir = output_dir / "raw" / "transcription"
+    resolved_input = normalize_youtube_url(source_url)
+    working_source_url = resolved_input.working_url
+    if resolved_input.changed:
+        diagnostics.add(
+            code="SOURCE_URL_NORMALIZED",
+            severity="info",
+            stage="url_resolution",
+            message="YouTube source URL was normalized before provider collection.",
+            details={
+                "original_url": source_url,
+                "working_url": working_source_url,
+                "method": resolved_input.method,
+            },
+        )
 
     info: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
     source = SourceInfo(platform="youtube", source_url=source_url)
 
     try:
-        info = dump_single_json(
-            source_url,
-            write_comments=False,
-            cookies=cookies,
-            cookies_from_browser=cookies_from_browser,
-        )
-        metadata = normalize_metadata(info, source_url)
-        source = SourceInfo(
-            platform="youtube",
-            source_url=source_url,
-            resolved_url=metadata["source"]["resolved_url"],
-            source_id=metadata["source"]["source_id"],
-        )
-        raw_chapters = [
-            item for item in info.get("chapters") or [] if isinstance(item, dict)
-        ]
-        source_chapters = normalize_source_chapters(
-            source=source,
-            chapters=raw_chapters,
-        )
-        write_json(output_dir / "source_chapters.json", source_chapters)
-        artifacts.add("source_chapters_path", "source_chapters", "source_chapters.json")
-        write_json(output_dir / "metadata.json", metadata)
-        artifacts.add("metadata_path", "metadata", "metadata.json")
-        capabilities.has_metadata = True
+        with timings.stage("metadata"):
+            info = dump_single_json(
+                working_source_url,
+                write_comments=False,
+                cookies=cookies,
+                cookies_from_browser=cookies_from_browser,
+            )
+            metadata = normalize_metadata(info, source_url)
+            source = SourceInfo(
+                platform="youtube",
+                source_url=source_url,
+                resolved_url=metadata["source"]["resolved_url"],
+                source_id=metadata["source"]["source_id"],
+            )
+            raw_chapters = [
+                item for item in info.get("chapters") or [] if isinstance(item, dict)
+            ]
+            source_chapters = normalize_source_chapters(
+                source=source,
+                chapters=raw_chapters,
+            )
+            write_json(output_dir / "source_chapters.json", source_chapters)
+            artifacts.add("source_chapters_path", "source_chapters", "source_chapters.json")
+            attach_thumbnail_asset(
+                metadata=metadata,
+                output_dir=output_dir,
+                artifacts=artifacts,
+                diagnostics=diagnostics,
+                source_id=source.source_id or "youtube-video",
+                referer=source.resolved_url or working_source_url,
+            )
+            write_json(output_dir / "metadata.json", metadata)
+            artifacts.add("metadata_path", "metadata", "metadata.json")
+            capabilities.has_metadata = True
     except YtDlpUnavailable as error:
         diagnostics.add(
             code="TOOL_MISSING",
@@ -526,30 +553,31 @@ def analyze_youtube(
     subtitle_language_hint = ""
     if info is not None:
         try:
-            manual_subtitles_available = _has_manual_subtitles(info)
-            subtitle_files = write_subtitles(
-                source_url,
-                raw_dir,
-                source.source_id or None,
-                cookies=cookies,
-                cookies_from_browser=cookies_from_browser,
-            )
-            subtitle_file = select_subtitle_file(subtitle_files)
-            subtitle_language_hint = subtitle_file.name if subtitle_file else ""
-            if subtitle_file:
-                transcript_segments = parse_subtitle(subtitle_file)
-            if transcript_segments:
-                _write_transcript_artifacts(
-                    output_dir=output_dir,
-                    artifacts=artifacts,
-                    source=source,
-                    segments=transcript_segments,
-                    language=subtitle_file.name if subtitle_file else "",
-                    transcript_source=_subtitle_transcript_source(info),
+            with timings.stage("transcript_subtitles"):
+                manual_subtitles_available = _has_manual_subtitles(info)
+                subtitle_files = write_subtitles(
+                    working_source_url,
+                    raw_dir,
+                    source.source_id or None,
+                    cookies=cookies,
+                    cookies_from_browser=cookies_from_browser,
                 )
-                capabilities.has_transcript = True
-            else:
-                subtitle_unavailable = True
+                subtitle_file = select_subtitle_file(subtitle_files)
+                subtitle_language_hint = subtitle_file.name if subtitle_file else ""
+                if subtitle_file:
+                    transcript_segments = parse_subtitle(subtitle_file)
+                if transcript_segments:
+                    _write_transcript_artifacts(
+                        output_dir=output_dir,
+                        artifacts=artifacts,
+                        source=source,
+                        segments=transcript_segments,
+                        language=subtitle_file.name if subtitle_file else "",
+                        transcript_source=_subtitle_transcript_source(info),
+                    )
+                    capabilities.has_transcript = True
+                else:
+                    subtitle_unavailable = True
         except Exception as error:  # noqa: BLE001
             _diagnose_command_failure(
                 diagnostics,
@@ -562,24 +590,25 @@ def analyze_youtube(
     comments_payload: dict[str, Any] | None = None
     if fetch_comments and info is not None:
         try:
-            comment_info = dump_single_json(
-                source_url,
-                write_comments=True,
-                max_comments=max_comments,
-                comment_sort=comment_sort,
-                cookies=cookies,
-                cookies_from_browser=cookies_from_browser,
-                timeout_seconds=360,
-            )
-            comments_payload = normalize_comments(
-                source_id=source.source_id,
-                url=source.source_url,
-                raw_comments=comment_info.get("comments") or [],
-                max_comments=max_comments,
-            )
-            write_json(output_dir / "comments.json", comments_payload)
-            artifacts.add("comments_path", "comments", "comments.json")
-            capabilities.has_comments = True
+            with timings.stage("comments", {"max_comments": max_comments}):
+                comment_info = dump_single_json(
+                    working_source_url,
+                    write_comments=True,
+                    max_comments=max_comments,
+                    comment_sort=comment_sort,
+                    cookies=cookies,
+                    cookies_from_browser=cookies_from_browser,
+                    timeout_seconds=360,
+                )
+                comments_payload = normalize_comments(
+                    source_id=source.source_id,
+                    url=source.source_url,
+                    raw_comments=comment_info.get("comments") or [],
+                    max_comments=max_comments,
+                )
+                write_json(output_dir / "comments.json", comments_payload)
+                artifacts.add("comments_path", "comments", "comments.json")
+                capabilities.has_comments = True
         except Exception as error:  # noqa: BLE001
             _diagnose_command_failure(
                 diagnostics,
@@ -598,19 +627,20 @@ def analyze_youtube(
 
     if info is not None:
         try:
-            working_video = download_working_video(
-                source_url,
-                raw_media_dir,
-                source_id=source.source_id or "youtube-video",
-                max_height=1080,
-                cookies=cookies,
-                cookies_from_browser=cookies_from_browser,
-            )
-            artifacts.add(
-                "working_video_path",
-                "raw_media",
-                working_video.relative_to(output_dir).as_posix(),
-            )
+            with timings.stage("media_download", {"max_height": 1080}):
+                working_video = download_working_video(
+                    working_source_url,
+                    raw_media_dir,
+                    source_id=source.source_id or "youtube-video",
+                    max_height=1080,
+                    cookies=cookies,
+                    cookies_from_browser=cookies_from_browser,
+                )
+                artifacts.add(
+                    "working_video_path",
+                    "raw_media",
+                    working_video.relative_to(output_dir).as_posix(),
+                )
             should_compare_auto_subtitles = (
                 compare_auto_subtitles
                 and transcript_segments
@@ -622,99 +652,100 @@ def analyze_youtube(
             )
             if should_transcribe:
                 try:
-                    local_transcription_language = _infer_local_transcription_language(
-                        info=info,
-                        subtitle_language_hint=subtitle_language_hint,
-                    )
-                    transcription_info, transcribed_segments = _run_local_transcription(
-                        source_url=source_url,
-                        source=source,
-                        output_dir=output_dir,
-                        artifacts=artifacts,
-                        raw_audio_dir=raw_audio_dir,
-                        raw_transcription_dir=raw_transcription_dir,
-                        language=local_transcription_language,
-                        cookies=cookies,
-                        cookies_from_browser=cookies_from_browser,
-                    )
-                    if transcribed_segments:
-                        model_path = transcription_info.get("model_path")
-                        model_path = model_path if isinstance(model_path, Path) else None
-                        if should_compare_auto_subtitles:
-                            _write_transcript_alternative_artifacts(
-                                output_dir=output_dir,
-                                artifacts=artifacts,
-                                source=source,
-                                primary_transcript_path="transcript.segments.json",
-                                segments=transcribed_segments,
-                                language=str(transcription_info.get("language") or "auto"),
-                                transcript_source=str(
-                                    transcription_info.get("transcript_source")
-                                    or transcription_info.get("engine")
-                                    or "local_transcription"
-                                ),
-                                reason="auto_subtitle_comparison",
-                                model_path=model_path,
-                                language_detection=transcription_info.get(
-                                    "language_detection"
+                    with timings.stage("audio_transcription"):
+                        local_transcription_language = _infer_local_transcription_language(
+                            info=info,
+                            subtitle_language_hint=subtitle_language_hint,
+                        )
+                        transcription_info, transcribed_segments = _run_local_transcription(
+                            source_url=working_source_url,
+                            source=source,
+                            output_dir=output_dir,
+                            artifacts=artifacts,
+                            raw_audio_dir=raw_audio_dir,
+                            raw_transcription_dir=raw_transcription_dir,
+                            language=local_transcription_language,
+                            cookies=cookies,
+                            cookies_from_browser=cookies_from_browser,
+                        )
+                        if transcribed_segments:
+                            model_path = transcription_info.get("model_path")
+                            model_path = model_path if isinstance(model_path, Path) else None
+                            if should_compare_auto_subtitles:
+                                _write_transcript_alternative_artifacts(
+                                    output_dir=output_dir,
+                                    artifacts=artifacts,
+                                    source=source,
+                                    primary_transcript_path="transcript.segments.json",
+                                    segments=transcribed_segments,
+                                    language=str(transcription_info.get("language") or "auto"),
+                                    transcript_source=str(
+                                        transcription_info.get("transcript_source")
+                                        or transcription_info.get("engine")
+                                        or "local_transcription"
+                                    ),
+                                    reason="auto_subtitle_comparison",
+                                    model_path=model_path,
+                                    language_detection=transcription_info.get(
+                                        "language_detection"
+                                    )
+                                    if isinstance(
+                                        transcription_info.get("language_detection"), dict
+                                    )
+                                    else None,
                                 )
-                                if isinstance(
-                                    transcription_info.get("language_detection"), dict
+                                diagnostics.add(
+                                    code="AUTO_SUBTITLE_COMPARISON",
+                                    severity="info",
+                                    stage="audio_transcription",
+                                    message=(
+                                        "YouTube subtitles appear to be automatic; "
+                                        "a local transcription comparison transcript was written."
+                                    ),
+                                    details={
+                                        "transcript_alternatives_path": (
+                                            "transcript.alternatives.json"
+                                        ),
+                                        "segment_count": len(transcribed_segments),
+                                    },
                                 )
-                                else None,
-                            )
+                                write_transcript_comparison(
+                                    bundle_dir=output_dir,
+                                    artifacts=artifacts,
+                                )
+                            else:
+                                transcript_segments = transcribed_segments
+                                _write_transcript_artifacts(
+                                    output_dir=output_dir,
+                                    artifacts=artifacts,
+                                    source=source,
+                                    segments=transcript_segments,
+                                    language=str(transcription_info.get("language") or "auto"),
+                                    transcript_source=str(
+                                        transcription_info.get("transcript_source")
+                                        or transcription_info.get("engine")
+                                        or "local_transcription"
+                                    ),
+                                    model_path=model_path,
+                                    language_detection=transcription_info.get(
+                                        "language_detection"
+                                    )
+                                    if isinstance(
+                                        transcription_info.get("language_detection"), dict
+                                    )
+                                    else None,
+                                )
+                                capabilities.has_transcript = True
+                        else:
                             diagnostics.add(
-                                code="AUTO_SUBTITLE_COMPARISON",
-                                severity="info",
+                                code="TRANSCRIPTION_UNAVAILABLE",
+                                severity="warning",
                                 stage="audio_transcription",
                                 message=(
-                                    "YouTube subtitles appear to be automatic; "
-                                    "a local transcription comparison transcript was written."
+                                    "Local audio transcription did not produce usable "
+                                    "transcript segments."
                                 ),
-                                details={
-                                    "transcript_alternatives_path": (
-                                        "transcript.alternatives.json"
-                                    ),
-                                    "segment_count": len(transcribed_segments),
-                                },
                             )
-                            write_transcript_comparison(
-                                bundle_dir=output_dir,
-                                artifacts=artifacts,
-                            )
-                        else:
-                            transcript_segments = transcribed_segments
-                            _write_transcript_artifacts(
-                                output_dir=output_dir,
-                                artifacts=artifacts,
-                                source=source,
-                                segments=transcript_segments,
-                                language=str(transcription_info.get("language") or "auto"),
-                                transcript_source=str(
-                                    transcription_info.get("transcript_source")
-                                    or transcription_info.get("engine")
-                                    or "local_transcription"
-                                ),
-                                model_path=model_path,
-                                language_detection=transcription_info.get(
-                                    "language_detection"
-                                )
-                                if isinstance(
-                                    transcription_info.get("language_detection"), dict
-                                )
-                                else None,
-                            )
-                            capabilities.has_transcript = True
-                    else:
-                        diagnostics.add(
-                            code="TRANSCRIPTION_UNAVAILABLE",
-                            severity="warning",
-                            stage="audio_transcription",
-                            message=(
-                                "Local audio transcription did not produce usable "
-                                "transcript segments."
-                            ),
-                        )
                 except Exception as error:  # noqa: BLE001
                     _diagnose_transcription_failure(diagnostics, error=error)
                     if subtitle_unavailable:
@@ -728,33 +759,37 @@ def analyze_youtube(
                             ),
                         )
             if visual_recall != "none":
-                slides_payload, screenshot_paths, visual_warnings = create_visual_recall_slides(
-                    source=source,
-                    source_url=source.source_url,
-                    video_path=working_video,
-                    output_dir=output_dir,
-                    visual_recall=visual_recall,
-                    visual_strategy=visual_strategy,
-                    max_screenshots=max_screenshots,
-                    transcript_segments=transcript_segments,
-                )
-                for warning in visual_warnings:
-                    diagnostics.add(
-                        code=str(warning["code"]),
-                        severity=warning["severity"],  # type: ignore[arg-type]
-                        stage=str(warning["stage"]),
-                        message=str(warning["message"]),
-                        details=warning.get("details") or {},
+                with timings.stage(
+                    "visual_recall",
+                    {"visual_recall": visual_recall, "visual_strategy": visual_strategy},
+                ):
+                    slides_payload, screenshot_paths, visual_warnings = create_visual_recall_slides(
+                        source=source,
+                        source_url=source.source_url,
+                        video_path=working_video,
+                        output_dir=output_dir,
+                        visual_recall=visual_recall,
+                        visual_strategy=visual_strategy,
+                        max_screenshots=max_screenshots,
+                        transcript_segments=transcript_segments,
                     )
-                write_json(output_dir / "slides.json", slides_payload)
-                artifacts.add("slides_path", "slides", "slides.json")
-                for index, screenshot_path in enumerate(screenshot_paths, start=1):
-                    artifacts.add(
-                        f"screenshot_{index:04d}",
-                        "screenshot",
-                        screenshot_path.relative_to(output_dir).as_posix(),
-                    )
-                capabilities.has_slides = True
+                    for warning in visual_warnings:
+                        diagnostics.add(
+                            code=str(warning["code"]),
+                            severity=warning["severity"],  # type: ignore[arg-type]
+                            stage=str(warning["stage"]),
+                            message=str(warning["message"]),
+                            details=warning.get("details") or {},
+                        )
+                    write_json(output_dir / "slides.json", slides_payload)
+                    artifacts.add("slides_path", "slides", "slides.json")
+                    for index, screenshot_path in enumerate(screenshot_paths, start=1):
+                        artifacts.add(
+                            f"screenshot_{index:04d}",
+                            "screenshot",
+                            screenshot_path.relative_to(output_dir).as_posix(),
+                        )
+                    capabilities.has_slides = True
         except FileNotFoundError as error:
             message = str(error).lower()
             if "ffmpeg" in message:
@@ -785,14 +820,15 @@ def analyze_youtube(
             message="Visual recall requires metadata extraction to resolve the YouTube source.",
         )
 
-    audience_feedback = build_audience_feedback(
-        metadata=metadata,
-        comments=comments_payload,
-        source=source,
-    )
-    write_json(output_dir / "audience_feedback.json", audience_feedback)
-    artifacts.add("audience_feedback_path", "audience_feedback", "audience_feedback.json")
-    capabilities.has_audience_feedback = True
+    with timings.stage("audience_feedback"):
+        audience_feedback = build_audience_feedback(
+            metadata=metadata,
+            comments=comments_payload,
+            source=source,
+        )
+        write_json(output_dir / "audience_feedback.json", audience_feedback)
+        artifacts.add("audience_feedback_path", "audience_feedback", "audience_feedback.json")
+        capabilities.has_audience_feedback = True
 
     if diagnostics.status == "error":
         diagnostics.add(
@@ -801,6 +837,9 @@ def analyze_youtube(
             stage="bundle",
             message="Bundle was written with missing required provider data.",
         )
+
+    timings.write(output_dir / "timings.json")
+    artifacts.add("timings_path", "timings", "timings.json")
 
     bundle = finalize_bundle(
         output_dir=output_dir,
@@ -829,7 +868,14 @@ def analyze_youtube(
         "report_ready": readiness["report_ready"],
         "output_dir": str(output_dir),
         "bundle_path": str(output_dir / "bundle.json"),
+        "metadata_path": str(output_dir / "metadata.json") if bundle.metadata_path else None,
+        "transcript_path": str(output_dir / "transcript.segments.json")
+        if bundle.transcript_path
+        else None,
+        "comments_path": str(output_dir / "comments.json") if bundle.comments_path else None,
+        "audience_feedback_path": str(output_dir / "audience_feedback.json"),
+        "slides_path": str(output_dir / "slides.json") if bundle.slides_path else None,
+        "timings_path": str(output_dir / "timings.json"),
         "diagnostics_path": str(output_dir / "diagnostics.json"),
-        "readiness": readiness,
-        "capabilities": bundle.capabilities.model_dump(mode="json"),
     }
+

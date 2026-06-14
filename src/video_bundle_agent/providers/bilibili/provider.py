@@ -15,6 +15,7 @@ from bilibili_api import video as bilibili_video
 
 from video_bundle_agent.bundle.readiness import evaluate_bundle_readiness
 from video_bundle_agent.bundle.schema import Capabilities, SourceInfo
+from video_bundle_agent.bundle.timings import StageTimings
 from video_bundle_agent.bundle.writer import (
     BundleArtifacts,
     finalize_bundle,
@@ -34,6 +35,8 @@ from video_bundle_agent.media.ytdlp import (
     download_working_video,
     dump_single_json,
 )
+from video_bundle_agent.providers.assets import attach_thumbnail_asset
+from video_bundle_agent.providers.url_resolution import normalize_bilibili_url
 from video_bundle_agent.tools.process import CommandError
 
 
@@ -889,6 +892,7 @@ def analyze_bilibili(
     cookies: Path | None = None,
     cookies_from_browser: str | None = None,
 ) -> dict[str, Any]:
+    timings = StageTimings()
     diagnostics = DiagnosticLog()
     artifacts = BundleArtifacts()
     capabilities = Capabilities(has_danmaku=False)
@@ -919,6 +923,31 @@ def analyze_bilibili(
     raw_audio_dir = output_dir / "raw" / "audio"
     raw_transcription_dir = output_dir / "raw" / "transcription"
     raw_api_dir = output_dir / "raw" / "bilibili_api"
+    working_source_url = source_url
+    try:
+        with timings.stage("url_resolution"):
+            resolved_input = normalize_bilibili_url(source_url)
+            working_source_url = resolved_input.working_url
+            if resolved_input.changed:
+                diagnostics.add(
+                    code="SOURCE_URL_NORMALIZED",
+                    severity="info",
+                    stage="url_resolution",
+                    message="Bilibili source URL was normalized before provider collection.",
+                    details={
+                        "original_url": source_url,
+                        "working_url": working_source_url,
+                        "method": resolved_input.method,
+                    },
+                )
+    except Exception as error:  # noqa: BLE001
+        diagnostics.add(
+            code="SOURCE_URL_RESOLUTION_FAILED",
+            severity="warning",
+            stage="url_resolution",
+            message=f"Could not normalize Bilibili source URL: {error}",
+            details={"exception": type(error).__name__, "source_url": source_url},
+        )
 
     api_video: Any | None = None
     api_info: dict[str, Any] | None = None
@@ -931,57 +960,58 @@ def analyze_bilibili(
     api_metadata_error: Exception | None = None
 
     try:
-        api_video, api_info, api_pages, cid = asyncio.run(
-            _fetch_api_video_context(
-                source_url=source_url,
-                source_id="",
-                aid=aid,
-                credential=bilibili_credential,
+        with timings.stage("metadata"):
+            api_video, api_info, api_pages, cid = asyncio.run(
+                _fetch_api_video_context(
+                    source_url=working_source_url,
+                    source_id="",
+                    aid=aid,
+                    credential=bilibili_credential,
+                )
             )
-        )
-        raw_api_dir.mkdir(parents=True, exist_ok=True)
-        write_json(raw_api_dir / "video_info.json", api_info)
-        write_json(raw_api_dir / "pages.json", {"items": api_pages})
-        artifacts.add(
-            "bilibili_api_video_info_path",
-            "raw_provider",
-            (raw_api_dir / "video_info.json").relative_to(output_dir).as_posix(),
-        )
-        artifacts.add(
-            "bilibili_api_pages_path",
-            "raw_provider",
-            (raw_api_dir / "pages.json").relative_to(output_dir).as_posix(),
-        )
-        aid = api_info.get("aid") if isinstance(api_info.get("aid"), int) else aid
-        metadata = normalize_metadata(
-            {
-                "id": api_info.get("bvid") or "",
-                "webpage_url": f"https://www.bilibili.com/video/{api_info.get('bvid')}",
-                "title": api_info.get("title") or "",
-                "description": api_info.get("desc") or "",
-                "duration": api_info.get("duration"),
-                "timestamp": api_info.get("pubdate"),
-                "uploader": (api_info.get("owner") or {}).get("name") or "",
-                "uploader_id": str((api_info.get("owner") or {}).get("mid") or ""),
-                "view_count": (api_info.get("stat") or {}).get("view"),
-                "like_count": (api_info.get("stat") or {}).get("like"),
-                "comment_count": (api_info.get("stat") or {}).get("reply"),
-                "thumbnail": api_info.get("pic") or "",
-            },
-            source_url,
-        )
-        _apply_api_metadata(metadata=metadata, api_info=api_info, pages=api_pages, cid=cid)
-        source = SourceInfo(
-            platform="bilibili",
-            source_url=source_url,
-            resolved_url=metadata["source"]["resolved_url"],
-            source_id=metadata["source"]["source_id"],
-        )
+            raw_api_dir.mkdir(parents=True, exist_ok=True)
+            write_json(raw_api_dir / "video_info.json", api_info)
+            write_json(raw_api_dir / "pages.json", {"items": api_pages})
+            artifacts.add(
+                "bilibili_api_video_info_path",
+                "raw_provider",
+                (raw_api_dir / "video_info.json").relative_to(output_dir).as_posix(),
+            )
+            artifacts.add(
+                "bilibili_api_pages_path",
+                "raw_provider",
+                (raw_api_dir / "pages.json").relative_to(output_dir).as_posix(),
+            )
+            aid = api_info.get("aid") if isinstance(api_info.get("aid"), int) else aid
+            metadata = normalize_metadata(
+                {
+                    "id": api_info.get("bvid") or "",
+                    "webpage_url": f"https://www.bilibili.com/video/{api_info.get('bvid')}",
+                    "title": api_info.get("title") or "",
+                    "description": api_info.get("desc") or "",
+                    "duration": api_info.get("duration"),
+                    "timestamp": api_info.get("pubdate"),
+                    "uploader": (api_info.get("owner") or {}).get("name") or "",
+                    "uploader_id": str((api_info.get("owner") or {}).get("mid") or ""),
+                    "view_count": (api_info.get("stat") or {}).get("view"),
+                    "like_count": (api_info.get("stat") or {}).get("like"),
+                    "comment_count": (api_info.get("stat") or {}).get("reply"),
+                    "thumbnail": api_info.get("pic") or "",
+                },
+                source_url,
+            )
+            _apply_api_metadata(metadata=metadata, api_info=api_info, pages=api_pages, cid=cid)
+            source = SourceInfo(
+                platform="bilibili",
+                source_url=source_url,
+                resolved_url=metadata["source"]["resolved_url"],
+                source_id=metadata["source"]["source_id"],
+            )
         if cid is not None:
             try:
                 player_v2_payload = asyncio.run(
                     _fetch_api_player_v2(
-                        source_url=source_url,
+                        source_url=working_source_url,
                         bvid=str(api_info.get("bvid") or source.source_id or ""),
                         aid=aid,
                         cid=cid,
@@ -1019,6 +1049,15 @@ def analyze_bilibili(
                     stage="source_chapters",
                     error=error,
                 )
+        if metadata is not None:
+            attach_thumbnail_asset(
+                metadata=metadata,
+                output_dir=output_dir,
+                artifacts=artifacts,
+                diagnostics=diagnostics,
+                source_id=source.source_id or "bilibili-video",
+                referer=source.resolved_url or working_source_url,
+            )
         write_json(output_dir / "metadata.json", metadata)
         artifacts.add("metadata_path", "metadata", "metadata.json")
         capabilities.has_metadata = True
@@ -1027,23 +1066,32 @@ def analyze_bilibili(
 
     if not capabilities.has_metadata:
         try:
-            info = dump_single_json(
-                source_url,
-                write_comments=False,
-                cookies=cookies,
-                cookies_from_browser=cookies_from_browser,
-            )
-            metadata = normalize_metadata(info, source_url)
-            aid = info.get("aid") if isinstance(info.get("aid"), int) else None
-            source = SourceInfo(
-                platform="bilibili",
-                source_url=source_url,
-                resolved_url=metadata["source"]["resolved_url"],
-                source_id=metadata["source"]["source_id"],
-            )
-            write_json(output_dir / "metadata.json", metadata)
-            artifacts.add("metadata_path", "metadata", "metadata.json")
-            capabilities.has_metadata = True
+            with timings.stage("metadata_fallback"):
+                info = dump_single_json(
+                    working_source_url,
+                    write_comments=False,
+                    cookies=cookies,
+                    cookies_from_browser=cookies_from_browser,
+                )
+                metadata = normalize_metadata(info, source_url)
+                aid = info.get("aid") if isinstance(info.get("aid"), int) else None
+                source = SourceInfo(
+                    platform="bilibili",
+                    source_url=source_url,
+                    resolved_url=metadata["source"]["resolved_url"],
+                    source_id=metadata["source"]["source_id"],
+                )
+                attach_thumbnail_asset(
+                    metadata=metadata,
+                    output_dir=output_dir,
+                    artifacts=artifacts,
+                    diagnostics=diagnostics,
+                    source_id=source.source_id or "bilibili-video",
+                    referer=source.resolved_url or working_source_url,
+                )
+                write_json(output_dir / "metadata.json", metadata)
+                artifacts.add("metadata_path", "metadata", "metadata.json")
+                capabilities.has_metadata = True
             if api_metadata_error is not None:
                 _diagnose_command_failure(
                     diagnostics,
@@ -1095,23 +1143,24 @@ def analyze_bilibili(
             )
         else:
             try:
-                raw_replies, total_reported = asyncio.run(
-                    _fetch_api_comments(
-                        aid=aid,
-                        max_comments=max_comments,
-                        comment_sort=comment_sort,
-                        credential=bilibili_credential,
+                with timings.stage("comments", {"max_comments": max_comments}):
+                    raw_replies, total_reported = asyncio.run(
+                        _fetch_api_comments(
+                            aid=aid,
+                            max_comments=max_comments,
+                            comment_sort=comment_sort,
+                            credential=bilibili_credential,
+                        )
                     )
-                )
-                comments_payload = _normalize_bilibili_comments(
-                    source=source,
-                    raw_replies=raw_replies,
-                    total_reported=total_reported,
-                    max_comments=max_comments,
-                )
-                write_json(output_dir / "comments.json", comments_payload)
-                artifacts.add("comments_path", "comments", "comments.json")
-                capabilities.has_comments = bool(comments_payload["items"])
+                    comments_payload = _normalize_bilibili_comments(
+                        source=source,
+                        raw_replies=raw_replies,
+                        total_reported=total_reported,
+                        max_comments=max_comments,
+                    )
+                    write_json(output_dir / "comments.json", comments_payload)
+                    artifacts.add("comments_path", "comments", "comments.json")
+                    capabilities.has_comments = bool(comments_payload["items"])
                 requested_count = min(
                     max_comments,
                     total_reported if total_reported is not None else max_comments,
@@ -1156,22 +1205,23 @@ def analyze_bilibili(
     danmaku_payload: dict[str, Any] | None = None
     if max_danmaku > 0 and api_video is not None and cid is not None:
         try:
-            danmaku_items, danmaku_sampling = asyncio.run(
-                _fetch_api_danmakus(
-                    video=api_video,
-                    cid=cid,
-                    max_danmaku=max_danmaku,
+            with timings.stage("danmaku", {"max_danmaku": max_danmaku}):
+                danmaku_items, danmaku_sampling = asyncio.run(
+                    _fetch_api_danmakus(
+                        video=api_video,
+                        cid=cid,
+                        max_danmaku=max_danmaku,
+                    )
                 )
-            )
-            danmaku_payload = _build_danmaku_payload(
-                source=source,
-                cid=cid,
-                items=danmaku_items,
-                sampling=danmaku_sampling,
-            )
-            write_json(output_dir / "danmaku.json", danmaku_payload)
-            artifacts.add("danmaku_path", "danmaku", "danmaku.json")
-            capabilities.has_danmaku = bool(danmaku_items)
+                danmaku_payload = _build_danmaku_payload(
+                    source=source,
+                    cid=cid,
+                    items=danmaku_items,
+                    sampling=danmaku_sampling,
+                )
+                write_json(output_dir / "danmaku.json", danmaku_payload)
+                artifacts.add("danmaku_path", "danmaku", "danmaku.json")
+                capabilities.has_danmaku = bool(danmaku_items)
         except Exception as error:  # noqa: BLE001
             _diagnose_command_failure(
                 diagnostics,
@@ -1192,30 +1242,33 @@ def analyze_bilibili(
     working_audio: Path | None = None
     if capabilities.has_metadata and api_video is not None and cid is not None:
         try:
-            download_url_payload = asyncio.run(_fetch_api_download_url(video=api_video, cid=cid))
-            raw_api_dir.mkdir(parents=True, exist_ok=True)
-            write_json(raw_api_dir / "download_url.json", download_url_payload)
-            artifacts.add(
-                "bilibili_api_download_url_path",
-                "raw_provider",
-                (raw_api_dir / "download_url.json").relative_to(output_dir).as_posix(),
-            )
-            working_video, working_audio = _download_api_working_media(
-                download_url_payload=download_url_payload,
-                output_dir=raw_media_dir,
-                source_id=source.source_id or "bilibili-video",
-                source_url=source.source_url,
-            )
-            artifacts.add(
-                "working_video_path",
-                "raw_media",
-                working_video.relative_to(output_dir).as_posix(),
-            )
-            artifacts.add(
-                "working_audio_path",
-                "raw_audio",
-                working_audio.relative_to(output_dir).as_posix(),
-            )
+            with timings.stage("media_download", {"method": "bilibili_api"}):
+                download_url_payload = asyncio.run(
+                    _fetch_api_download_url(video=api_video, cid=cid)
+                )
+                raw_api_dir.mkdir(parents=True, exist_ok=True)
+                write_json(raw_api_dir / "download_url.json", download_url_payload)
+                artifacts.add(
+                    "bilibili_api_download_url_path",
+                    "raw_provider",
+                    (raw_api_dir / "download_url.json").relative_to(output_dir).as_posix(),
+                )
+                working_video, working_audio = _download_api_working_media(
+                    download_url_payload=download_url_payload,
+                    output_dir=raw_media_dir,
+                    source_id=source.source_id or "bilibili-video",
+                    source_url=working_source_url,
+                )
+                artifacts.add(
+                    "working_video_path",
+                    "raw_media",
+                    working_video.relative_to(output_dir).as_posix(),
+                )
+                artifacts.add(
+                    "working_audio_path",
+                    "raw_audio",
+                    working_audio.relative_to(output_dir).as_posix(),
+                )
         except Exception as api_error:  # noqa: BLE001
             _diagnose_command_failure(
                 diagnostics,
@@ -1227,19 +1280,20 @@ def analyze_bilibili(
 
     if working_video is None and capabilities.has_metadata:
         try:
-            working_video = download_working_video(
-                source_url,
-                raw_media_dir,
-                source_id=source.source_id or "bilibili-video",
-                max_height=1080,
-                cookies=cookies,
-                cookies_from_browser=cookies_from_browser,
-            )
-            artifacts.add(
-                "working_video_path",
-                "raw_media",
-                working_video.relative_to(output_dir).as_posix(),
-            )
+            with timings.stage("media_download", {"method": "yt_dlp_fallback"}):
+                working_video = download_working_video(
+                    working_source_url,
+                    raw_media_dir,
+                    source_id=source.source_id or "bilibili-video",
+                    max_height=1080,
+                    cookies=cookies,
+                    cookies_from_browser=cookies_from_browser,
+                )
+                artifacts.add(
+                    "working_video_path",
+                    "raw_media",
+                    working_video.relative_to(output_dir).as_posix(),
+                )
         except Exception as error:  # noqa: BLE001
             _diagnose_command_failure(
                 diagnostics,
@@ -1251,52 +1305,56 @@ def analyze_bilibili(
 
     if working_video is not None and (force_transcription or not transcript_segments):
         try:
-            if working_audio is not None:
-                transcription_info, transcribed_segments = _transcribe_existing_audio(
-                    audio_path=working_audio,
-                    output_dir=output_dir,
-                    artifacts=artifacts,
-                    raw_transcription_dir=raw_transcription_dir,
-                )
-            else:
-                transcription_info, transcribed_segments = _transcribe_audio(
-                    source_url=source_url,
-                    source=source,
-                    output_dir=output_dir,
-                    artifacts=artifacts,
-                    raw_audio_dir=raw_audio_dir,
-                    raw_transcription_dir=raw_transcription_dir,
-                    cookies=cookies,
-                    cookies_from_browser=cookies_from_browser,
-                )
-            if transcribed_segments:
-                model_path = transcription_info.get("model_path")
-                model_path = model_path if isinstance(model_path, Path) else None
-                transcript_segments = transcribed_segments
-                _write_transcript_artifacts(
-                    output_dir=output_dir,
-                    artifacts=artifacts,
-                    source=source,
-                    segments=transcript_segments,
-                    language=str(transcription_info.get("language") or "auto"),
-                    transcript_source=str(
-                        transcription_info.get("transcript_source")
-                        or transcription_info.get("engine")
-                        or "local_transcription"
-                    ),
-                    model_path=model_path,
-                    language_detection=transcription_info.get("language_detection")
-                    if isinstance(transcription_info.get("language_detection"), dict)
-                    else None,
-                )
-                capabilities.has_transcript = True
-            else:
-                diagnostics.add(
-                    code="TRANSCRIPTION_UNAVAILABLE",
-                    severity="warning",
-                    stage="audio_transcription",
-                    message="Local audio transcription did not produce usable transcript segments.",
-                )
+            with timings.stage("audio_transcription"):
+                if working_audio is not None:
+                    transcription_info, transcribed_segments = _transcribe_existing_audio(
+                        audio_path=working_audio,
+                        output_dir=output_dir,
+                        artifacts=artifacts,
+                        raw_transcription_dir=raw_transcription_dir,
+                    )
+                else:
+                    transcription_info, transcribed_segments = _transcribe_audio(
+                        source_url=working_source_url,
+                        source=source,
+                        output_dir=output_dir,
+                        artifacts=artifacts,
+                        raw_audio_dir=raw_audio_dir,
+                        raw_transcription_dir=raw_transcription_dir,
+                        cookies=cookies,
+                        cookies_from_browser=cookies_from_browser,
+                    )
+                if transcribed_segments:
+                    model_path = transcription_info.get("model_path")
+                    model_path = model_path if isinstance(model_path, Path) else None
+                    transcript_segments = transcribed_segments
+                    _write_transcript_artifacts(
+                        output_dir=output_dir,
+                        artifacts=artifacts,
+                        source=source,
+                        segments=transcript_segments,
+                        language=str(transcription_info.get("language") or "auto"),
+                        transcript_source=str(
+                            transcription_info.get("transcript_source")
+                            or transcription_info.get("engine")
+                            or "local_transcription"
+                        ),
+                        model_path=model_path,
+                        language_detection=transcription_info.get("language_detection")
+                        if isinstance(transcription_info.get("language_detection"), dict)
+                        else None,
+                    )
+                    capabilities.has_transcript = True
+                else:
+                    diagnostics.add(
+                        code="TRANSCRIPTION_UNAVAILABLE",
+                        severity="warning",
+                        stage="audio_transcription",
+                        message=(
+                            "Local audio transcription did not produce usable "
+                            "transcript segments."
+                        ),
+                    )
         except Exception as error:  # noqa: BLE001
             _diagnose_transcription_failure(diagnostics, error=error)
             if not transcript_segments:
@@ -1309,33 +1367,37 @@ def analyze_bilibili(
 
     if working_video is not None and visual_recall != "none":
         try:
-            slides_payload, screenshot_paths, visual_warnings = create_visual_recall_slides(
-                source=source,
-                source_url=source.source_url,
-                video_path=working_video,
-                output_dir=output_dir,
-                visual_recall=visual_recall,
-                visual_strategy=visual_strategy,
-                max_screenshots=max_screenshots,
-                transcript_segments=transcript_segments,
-            )
-            for warning in visual_warnings:
-                diagnostics.add(
-                    code=str(warning["code"]),
-                    severity=warning["severity"],  # type: ignore[arg-type]
-                    stage=str(warning["stage"]),
-                    message=str(warning["message"]),
-                    details=warning.get("details") or {},
+            with timings.stage(
+                "visual_recall",
+                {"visual_recall": visual_recall, "visual_strategy": visual_strategy},
+            ):
+                slides_payload, screenshot_paths, visual_warnings = create_visual_recall_slides(
+                    source=source,
+                    source_url=source.source_url,
+                    video_path=working_video,
+                    output_dir=output_dir,
+                    visual_recall=visual_recall,
+                    visual_strategy=visual_strategy,
+                    max_screenshots=max_screenshots,
+                    transcript_segments=transcript_segments,
                 )
-            write_json(output_dir / "slides.json", slides_payload)
-            artifacts.add("slides_path", "slides", "slides.json")
-            for index, screenshot_path in enumerate(screenshot_paths, start=1):
-                artifacts.add(
-                    f"screenshot_{index:04d}",
-                    "screenshot",
-                    screenshot_path.relative_to(output_dir).as_posix(),
-                )
-            capabilities.has_slides = bool(screenshot_paths)
+                for warning in visual_warnings:
+                    diagnostics.add(
+                        code=str(warning["code"]),
+                        severity=warning["severity"],  # type: ignore[arg-type]
+                        stage=str(warning["stage"]),
+                        message=str(warning["message"]),
+                        details=warning.get("details") or {},
+                    )
+                write_json(output_dir / "slides.json", slides_payload)
+                artifacts.add("slides_path", "slides", "slides.json")
+                for index, screenshot_path in enumerate(screenshot_paths, start=1):
+                    artifacts.add(
+                        f"screenshot_{index:04d}",
+                        "screenshot",
+                        screenshot_path.relative_to(output_dir).as_posix(),
+                    )
+                capabilities.has_slides = bool(screenshot_paths)
         except FileNotFoundError as error:
             message = str(error).lower()
             if "ffmpeg" in message:
@@ -1359,14 +1421,15 @@ def analyze_bilibili(
                 error=error,
             )
 
-    audience_feedback = _build_audience_feedback(metadata=metadata, source=source)
-    if comments_payload is not None:
-        audience_feedback["has_comments"] = True
-        audience_feedback["count_fetched"] = comments_payload["count_fetched"]
-        audience_feedback["stats"] = comments_payload["stats"]
-    write_json(output_dir / "audience_feedback.json", audience_feedback)
-    artifacts.add("audience_feedback_path", "audience_feedback", "audience_feedback.json")
-    capabilities.has_audience_feedback = True
+    with timings.stage("audience_feedback"):
+        audience_feedback = _build_audience_feedback(metadata=metadata, source=source)
+        if comments_payload is not None:
+            audience_feedback["has_comments"] = True
+            audience_feedback["count_fetched"] = comments_payload["count_fetched"]
+            audience_feedback["stats"] = comments_payload["stats"]
+        write_json(output_dir / "audience_feedback.json", audience_feedback)
+        artifacts.add("audience_feedback_path", "audience_feedback", "audience_feedback.json")
+        capabilities.has_audience_feedback = True
 
     if diagnostics.status == "error":
         diagnostics.add(
@@ -1375,6 +1438,9 @@ def analyze_bilibili(
             stage="bundle",
             message="Bundle was written with missing required provider data.",
         )
+
+    timings.write(output_dir / "timings.json")
+    artifacts.add("timings_path", "timings", "timings.json")
 
     bundle = finalize_bundle(
         output_dir=output_dir,
@@ -1404,6 +1470,7 @@ def analyze_bilibili(
         "report_ready": readiness["report_ready"],
         "output_dir": str(output_dir),
         "bundle_path": str(output_dir / "bundle.json"),
+        "timings_path": str(output_dir / "timings.json"),
         "diagnostics_path": str(output_dir / "diagnostics.json"),
         "readiness": readiness,
         "capabilities": bundle.capabilities.model_dump(mode="json"),

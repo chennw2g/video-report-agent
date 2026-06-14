@@ -7,6 +7,7 @@ from typing import Any
 
 from video_bundle_agent.bundle.evidence import select_report_evidence
 from video_bundle_agent.bundle.readiness import evaluate_bundle_readiness
+from video_bundle_agent.bundle.timings import StageTimings
 from video_bundle_agent.bundle.writer import write_json
 
 ARTIFACT_PURPOSES: dict[str, str] = {
@@ -20,7 +21,9 @@ ARTIFACT_PURPOSES: dict[str, str] = {
     "audience_feedback_path": "lightweight audience feedback",
     "source_chapters_path": "original platform chapters",
     "slides_path": "screenshot and keyframe evidence",
+    "thumbnail_path": "local cover or thumbnail image",
     "content_profile_path": "Codex-authored content type and visual policy",
+    "timings_path": "stage timing log",
     "diagnostics_path": "tool and provider diagnostics",
     "manifest_path": "bundle file manifest",
 }
@@ -85,6 +88,7 @@ def _metadata_summary(metadata: dict[str, Any]) -> dict[str, Any]:
         "like_count": metadata.get("like_count"),
         "comment_count": metadata.get("comment_count"),
         "thumbnail": metadata.get("thumbnail") or "",
+        "thumbnail_path": metadata.get("thumbnail_path") or "",
         "tags": metadata.get("tags") or [],
         "categories": metadata.get("categories") or [],
     }
@@ -443,14 +447,19 @@ def prepare_report_input(
     draft_content: bool = True,
 ) -> dict[str, Any]:
     bundle_dir = bundle_dir.resolve()
+    timings = StageTimings.load(bundle_dir / "timings.json")
     bundle = _read_json_if_exists(bundle_dir / "bundle.json")
     readiness = evaluate_bundle_readiness(bundle_dir)
-    selected = select_report_evidence(
-        bundle_dir,
-        max_images=max_images,
-        transcript_window_seconds=transcript_window_seconds,
-        plan_path=plan_path,
-    )
+    with timings.stage(
+        "select_evidence",
+        {"max_images": max_images, "transcript_window_seconds": transcript_window_seconds},
+    ):
+        selected = select_report_evidence(
+            bundle_dir,
+            max_images=max_images,
+            transcript_window_seconds=transcript_window_seconds,
+            plan_path=plan_path,
+        )
 
     metadata_raw = _read_bundle_artifact(bundle_dir, bundle, "metadata_path")
     transcript_raw = _read_bundle_artifact(bundle_dir, bundle, "transcript_path")
@@ -549,14 +558,20 @@ def prepare_report_input(
     }
 
     if write:
-        write_json(bundle_dir / "report.input.json", payload)
-        payload["generated_paths"]["report_input_path"] = "report.input.json"
-        if draft_content and readiness["report_ready"]:
-            draft = _build_draft_content(payload)
-            write_json(bundle_dir / "report.content.draft.json", draft)
-            payload["generated_paths"]["report_content_draft_path"] = (
-                "report.content.draft.json"
-            )
+        with timings.stage(
+            "prepare_report_input",
+            {"write": write, "draft_content": draft_content},
+        ):
             write_json(bundle_dir / "report.input.json", payload)
+            payload["generated_paths"]["report_input_path"] = "report.input.json"
+            if draft_content and readiness["report_ready"]:
+                draft = _build_draft_content(payload)
+                write_json(bundle_dir / "report.content.draft.json", draft)
+                payload["generated_paths"]["report_content_draft_path"] = (
+                    "report.content.draft.json"
+                )
+                write_json(bundle_dir / "report.input.json", payload)
+
+    timings.write(bundle_dir / "timings.json")
 
     return payload

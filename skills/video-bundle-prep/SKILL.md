@@ -20,6 +20,11 @@ This skill turns a video link, local video file, or existing bundle into a reusa
    - Xiaohongshu: lightweight metadata/media provider plus MediaCrawler-only bounded comments.
    - Local video: local media workflow.
 3. Run stage-1 collection with transcript/transcription evidence, bounded comments when requested, retained working media, no screenshots yet, and no LLM calls.
+   - Providers normalize known short/share URL forms before platform-specific collection while preserving the
+     original user input in `source.source_url`.
+   - Providers try to download platform thumbnails/covers into `raw/thumbnail/` and write
+     `metadata.thumbnail_path` when `metadata.thumbnail` is available.
+   - Stage timing is written to `timings.json`; use it when explaining slow or blocked runs.
    - Local transcription is language-aware:
      - Before full local transcription, the bundle engine cuts a short 16 kHz WAV probe and runs whisper.cpp
        language detection on actual speech audio.
@@ -52,7 +57,8 @@ This skill turns a video link, local video file, or existing bundle into a reusa
 13. Run `video-bundle-agent select-evidence <bundle-dir> --plan visual_selection_plan.json`.
 14. Run `video-bundle-agent prepare-report <bundle-dir> --plan visual_selection_plan.json` to write
    mode-independent `report.input.json`.
-15. Return the bundle path, readiness status, important diagnostics, and generated artifact paths.
+15. Return the bundle path, readiness status, important diagnostics, generated artifact paths, and notable
+   `timings.json` slow stages when relevant.
 
 ## Mode Boundary
 

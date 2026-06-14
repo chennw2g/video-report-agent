@@ -56,9 +56,16 @@ Mode boundaries:
      and do not treat Bilibili `metadata.pages` as progress-bar chapters. YouTube `source_chapters.json`
      comes from yt-dlp `chapters`; Xiaohongshu usually has no native chapter source and should use natural
      sections.
+   - If `timings.json` exists, use it only for workflow diagnostics, such as explaining slow stages. Do not
+     treat timing data as source evidence.
 9. Clearly separate observed source material from AI inference.
 10. Write mode-specific content JSON.
+    For Chinese report content, do not use PowerShell pipes, here-strings, `Set-Content`, or shell-generated
+    text paths. Use `apply_patch` for manual content files or a project Python writer that opens files with
+    `encoding="utf-8"`.
 11. Render mode-specific HTML/PNG with `scripts/render_report.py`; produce PDF only when explicitly useful.
+    The renderer refuses suspected mojibake content by default. If rendering fails for encoding damage, fix
+    or regenerate `report.content.<mode>.json` through a UTF-8-safe path instead of publishing the bad output.
 
 ## Output Files
 
@@ -121,6 +128,9 @@ comment rules, label text, or content depth. Those rules belong to the content c
   center them against the text block. For portrait/vertical video frames in the hero, use a stable 3:2
   horizontal contain box with side whitespace so the title area is not stretched by a tall vertical image.
   Body modules stack vertically as full-width panels.
+- Hero visual priority: explicit `hero_visual`, then platform cover/thumbnail (`metadata.thumbnail_path`
+  preferred over remote `metadata.thumbnail`), then representative body screenshot. Do not let the first
+  inline screenshot silently replace a valid source cover in the title/header area.
 - Typography: use readable Chinese sans-serif typography, generous line height, no viewport-scaled font
   sizes, and default letter spacing.
 - Panels/cards: use white surfaces, low-contrast borders, light shadows, and 8px-or-smaller radii. Avoid

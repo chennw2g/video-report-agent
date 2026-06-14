@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from video_bundle_agent.bundle.schema import SourceInfo
+from video_bundle_agent.providers.url_resolution import normalize_youtube_url
 from video_bundle_agent.providers.youtube.comments import normalize_comments
 from video_bundle_agent.providers.youtube.provider import normalize_source_chapters
 from video_bundle_agent.providers.youtube.transcript import parse_json3, parse_vtt
@@ -92,3 +93,14 @@ def test_parse_vtt_transcript(tmp_path: Path) -> None:
     assert segments[0]["start"] == 1.0
     assert segments[0]["end"] == 3.0
     assert segments[0]["text"] == "Hello world"
+
+
+def test_normalize_youtube_short_forms_to_watch_url() -> None:
+    assert (
+        normalize_youtube_url("https://youtu.be/AOEr5FrW-lY?si=tracking").working_url
+        == "https://www.youtube.com/watch?v=AOEr5FrW-lY"
+    )
+    assert (
+        normalize_youtube_url("https://www.youtube.com/shorts/wvzJHVmvEwU?si=x").working_url
+        == "https://www.youtube.com/watch?v=wvzJHVmvEwU"
+    )

@@ -23,6 +23,8 @@ content_profile.json
 visual_selection_plan.json
 report.input.json
 report.content.draft.json
+timings.json
+raw/thumbnail/*
 screenshots/candidates/*.png
 screenshots/selected/*.png
 diagnostics.json
@@ -57,10 +59,12 @@ but report skills should read the normalized artifacts listed in `bundle.json` a
   "audience_feedback_path": "audience_feedback.json",
   "source_chapters_path": "source_chapters.json",
   "media_path": "media.json",
+  "thumbnail_path": "raw/thumbnail/474wZZHoWN4.jpg",
   "slides_path": "slides.json",
   "working_video_path": "raw/media/474wZZHoWN4.1080p.webm",
   "working_audio_path": "raw/audio/474wZZHoWN4.webm",
   "content_profile_path": "content_profile.json",
+  "timings_path": "timings.json",
   "diagnostics_path": "diagnostics.json",
   "manifest_path": "manifest.json",
   "capabilities": {
@@ -82,11 +86,37 @@ but these paths make retry and diagnostics auditable.
 `media_path` is optional. Providers such as Xiaohongshu may write `media.json` to record normalized source
 video/image URLs and the provider note type before local media files are downloaded.
 
+`thumbnail_path` is optional. When `metadata.thumbnail` is available, providers should try to download the
+source thumbnail/cover to `raw/thumbnail/` and write the local relative path into both `metadata.json` and
+`bundle.json`. Report renderers should prefer this local asset for the top hero visual before falling back
+to selected screenshots.
+
+`timings_path` points to `timings.json`, a lightweight stage timing log. It may be appended by staged
+operations such as `analyze`, `extract-frames`, `prepare-report`, and report rendering.
+
 `source_chapters_path` is optional. When the source platform exposes native chapters, the provider should
 write normalized `source_chapters.json` and report skills should prefer it over AI-inferred sections.
 For Bilibili, this comes from player `view_points`; `metadata.pages` only records pages/parts and is not the
 same as progress-bar chapters. For YouTube, this comes from yt-dlp `chapters` when present. Xiaohongshu
 currently has no reliable platform-native chapter source in this project.
+
+## metadata.json
+
+`metadata.json` contains normalized source metadata and platform statistics. Common fields include title,
+description, duration, published time, uploader/channel, view count, like count, comment count, tags, and
+`thumbnail`.
+
+When a provider can download the thumbnail/cover, it should also write:
+
+```json
+{
+  "thumbnail": "https://example.test/source-cover.jpg",
+  "thumbnail_path": "raw/thumbnail/source-id.jpg"
+}
+```
+
+`thumbnail` remains the source URL. `thumbnail_path` is the local report-safe asset and should be preferred
+for HTML/long-PNG hero rendering.
 
 ## source_chapters.json
 
@@ -217,6 +247,35 @@ When platform subtitles are automatic, the bundle may include `transcript.altern
 transcription comparison transcript such as `transcript.whisper.segments.json` or
 `transcript.funasr.segments.json`. The primary `transcript.segments.json` stays the provider transcript unless
 subtitles are missing or the run explicitly forces transcription.
+
+## timings.json
+
+`timings.json` records lightweight elapsed time for major workflow stages. It is diagnostic metadata, not
+source evidence. New staged operations may append to the same file.
+
+```json
+{
+  "schema_version": "0.1.0",
+  "generated_at": "2026-06-14T00:00:00+00:00",
+  "total_recorded_seconds": 380.12,
+  "stages": [
+    {
+      "name": "metadata",
+      "status": "ok",
+      "started_at": "2026-06-14T00:00:00+00:00",
+      "ended_at": "2026-06-14T00:00:03+00:00",
+      "elapsed_seconds": 3.0,
+      "details": {
+        "provider": "bilibili"
+      }
+    }
+  ]
+}
+```
+
+Known stage names include `url_resolution`, `metadata`, `metadata_fallback`, `comments`,
+`media_download`, `audio_transcription`, `visual_recall`, `extract_frames`, `select_evidence`,
+`prepare_report_input`, and `render_report`.
 
 `transcript.comparison.json` is a deterministic, non-LLM comparison between the primary transcript and the first
 alternative transcript. It aligns transcript text in time windows, records text similarity, highlights technical

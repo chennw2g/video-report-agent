@@ -79,7 +79,9 @@ Default sections:
 Image rules:
 
 - `quick` is not required to include images in every section.
-- A cover/thumbnail may be used as the main visual in the overview.
+- The report hero visual should prefer an explicit `hero_visual`, then the platform cover/thumbnail
+  (`metadata.thumbnail_path` when available, otherwise `metadata.thumbnail`), then a representative
+  screenshot. Do not let the first inline body screenshot replace a valid platform cover by accident.
 - Do not create a standalone key-image gallery. Put screenshots next to the text they clarify.
 - Do not use screenshots as decoration or filler.
 - For talking-head, podcast, interview, or other low-visual-variation videos, do not embed body screenshots

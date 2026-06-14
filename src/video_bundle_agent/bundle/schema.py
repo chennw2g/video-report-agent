@@ -38,10 +38,12 @@ class BundleIndex(BaseModel):
     audience_feedback_path: str | None = None
     source_chapters_path: str | None = None
     media_path: str | None = None
+    thumbnail_path: str | None = None
     slides_path: str | None = None
     working_video_path: str | None = None
     working_audio_path: str | None = None
     content_profile_path: str | None = None
+    timings_path: str | None = None
     diagnostics_path: str = "diagnostics.json"
     manifest_path: str = "manifest.json"
     capabilities: Capabilities = Field(default_factory=Capabilities)

@@ -213,7 +213,7 @@ These rules keep `video-bundle-agent` focused on producing reliable, inspectable
 - Avoid a standalone "key image gallery" in `quick`; visuals should sit next to the point they explain.
 - `quick` and `deep` should both include the same compact multi-dimensional rating graphic, such as a
   radar chart. This rating graphic should be the first content module after the top basic/source
-  information, before the video overview, so the reader sees Codex's overall judgment immediately.
+  information, before the video overview, so the reader sees AI's overall judgment immediately.
   The graphic is for quick visual orientation and does not need per-dimension reasons beside the chart;
   explain the reasoning later in the AI critique/detailed evaluation section.
 - Default rating dimensions are credibility, originality, value density, argument strength, information

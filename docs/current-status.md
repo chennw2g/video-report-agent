@@ -1,6 +1,6 @@
 # Current Status
 
-Last updated: 2026-06-14 18:50 +08:00
+Last updated: 2026-06-14 19:32 +08:00
 
 This file is the short project snapshot to read after context compaction. Update it after every material
 project change that affects capabilities, provider state, report contracts, validation status, known blockers,
@@ -16,21 +16,23 @@ external tool state, or recommended next steps.
     `report.input.json`.
   - `video-report`: writes final Chinese HTML and preferred long-PNG reports. It can call the prep workflow
     automatically when the user gives it a raw link or local video.
-- Plugin shell creation is intentionally deferred until report structure and visual output are stable.
+- Plugin shell creation was deferred while the quick/deep report structure and visual output stabilized.
+  The project is now ready to enter the plugin packaging phase.
 - Minimum report evidence remains transcript or audio transcription plus screenshots/keyframes. Comments are
   optional.
 
 ## Git State
 
 - Current branch: `main`.
-- Current working tree: has active ASR language-probe routing, CUDA whisper.cpp integration, and documentation
-  edits; full pytest and ruff pass as of the latest validation in this work session.
+- Current working tree: clean after commit `4ca5b4d`.
 - Latest validation in this work session:
   - `uv run ruff check`: passed.
   - `uv run pytest`: 58 passed.
   - `uv run video-bundle-agent doctor`: warning only; FunASR and whisper.cpp are available, optional
     `tesseract` is missing. `faster-whisper` is no longer part of the checked route.
+  - `uv build`: passed and produced ignored local `dist/` wheel/sdist artifacts.
 - Latest commits:
+  - `4ca5b4d Use GPU whisper turbo for English transcription`
   - `28d540c Add ASR benchmark tooling`
   - `b8a66a8 Prefer turbo whisper model and add FunASR extra`
   - `f374a36 Add plan-guided visual evidence selection`
@@ -374,21 +376,20 @@ The provider records these as `PERMISSION_REQUIRED` or `COOKIE_REQUIRED` diagnos
 ## Known Gaps
 
 - `tesseract` is not installed. OCR remains optional in the current phase.
-- `faster-whisper` is intentionally not used or checked. Current production local transcription uses installed
-  `whisper.cpp` CLI at `D:\Workshop\whisper.cpp\v1.8.6\Release\whisper-cli.exe` plus FunASR for Chinese.
-- English Whisper default model choice still needs a GPU-enabled whisper.cpp benchmark before finalizing
-  whether speed (`base`) or quality (`large-v3-turbo`) is the normal non-Chinese path.
-- The full Codex plugin shell is still deferred.
+- `faster-whisper` is intentionally not used or checked. Current production local transcription uses the CUDA
+  `whisper.cpp` CLI at `D:\Workshop\whisper.cpp\v1.8.6-cuda\Release\whisper-cli.exe` for English and other
+  non-Chinese audio, with `ggml-large-v3-turbo.bin` as the preferred local model. Chinese audio uses FunASR.
+- The full plugin shell has not been created yet; this is now the next packaging task rather than a deferred
+  product decision.
 - Copying selected screenshots into `screenshots/selected/`, OCR-based slide filtering, complex visual
   deduplication, sharpness/brightness scoring, and agent-assisted final body-image placement remain future
   work.
 
 ## Next Decisions
 
-- Continue report content/style iteration using the renderer-backed Template D baseline.
+- Start plugin packaging around the existing Python CLI, `video-bundle-prep` skill, `video-report` skill,
+  renderer, and shared docs.
 - Keep Xiaohongshu comments on the MediaCrawler official detail/jsonl path.
 - Avoid repeated QR/SMS debugging unless MediaCrawler's saved profile actually expires or returns a platform
   verification gate.
-- After the visual design and renderer are stable, revisit the Codex plugin shell that packages both skills
-  and the Python bundle engine entrypoints.
 - Treat MediaCrawler as a managed external runtime; keep other Xiaohongshu projects as references first.

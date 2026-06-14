@@ -197,15 +197,15 @@ interpretation, such as transcript disagreement, partial comments, missing visua
 screen-text-heavy videos, or platform permission/risk controls. In `quick`, keep it near limitations; in
 `deep`, move it near the overview only when it changes core interpretation.
 
-Reports should distinguish source material from Codex interpretation. Use lightweight labels such as
-`视频内容`, `Codex 解读`, `观众反馈`, and `诊断提示` when useful, especially for Codex-organized charts,
+Reports should distinguish source material from AI interpretation. Use lightweight labels such as
+`视频内容`, `AI 解读`, `观众反馈`, and `诊断提示` when useful, especially for AI-organized charts,
 tables, risk notes, and evaluations.
 
-Codex-made visuals are limited by mode. `quick` only includes the fixed multi-dimensional evaluation chart
-by default. `deep` may add Codex-organized flowcharts, concept maps, comparison tables, matrices, or
-timelines when they clarify the source; they must be labelled as Codex-organized and traceable to evidence.
-The compact Codex multi-dimensional evaluation chart is rendered as the first content module after the top
-basic/source information and before the video overview. Detailed rating reasoning stays later in the Codex
+AI-made visuals are limited by mode. `quick` only includes the fixed multi-dimensional evaluation chart
+by default. `deep` may add AI-organized flowcharts, concept maps, comparison tables, matrices, or
+timelines when they clarify the source; they must be labelled as AI-organized and traceable to evidence.
+The compact AI multi-dimensional evaluation chart is rendered as the first content module after the top
+basic/source information and before the video overview. Detailed rating reasoning stays later in the AI
 critique/detailed evaluation section.
 
 ```powershell

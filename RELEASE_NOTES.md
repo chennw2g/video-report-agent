@@ -1,5 +1,13 @@
 # video-report-agent 0.1.0-alpha.2
 
+## 中文说明
+
+`Video Report Agent` 是一个本地视频资料准备与中文图文报告生成工作流。它可以读取 YouTube、Bilibili、小红书链接或本地视频，采集元数据、章节、字幕/转录、截图、评论和诊断信息，生成可审计的本地证据包，并由 agent 输出 quick/deep 中文 HTML 与长图报告。
+
+对外项目名称是 `Video Report Agent`。`video-bundle-agent` 只是内部 Python CLI 名称，负责证据包准备，不代表整个项目名称。
+
+## English
+
 First public-ready alpha for local video report workflows.
 
 This supersedes `0.1.0-alpha.1` with final GitHub Actions cleanup and release-status documentation.

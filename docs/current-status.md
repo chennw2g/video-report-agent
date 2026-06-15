@@ -1,6 +1,6 @@
 # Current Status
 
-Last updated: 2026-06-15 22:38 +08:00
+Last updated: 2026-06-15 22:48 +08:00
 
 This file is the short project snapshot to read after context compaction. Update it after every material
 project change that affects capabilities, provider state, report contracts, validation status, known blockers,
@@ -41,6 +41,11 @@ external tool state, or recommended next steps.
 - The project license is GPL-3.0-or-later because the current Bilibili provider directly depends on
   `bilibili-api-python`, whose observed package metadata is GPL-3.0-or-later.
 - Public GitHub repository is configured at `https://github.com/chennw2g/video-report-agent`.
+- Public-facing project name is `Video Report Agent`. `video-bundle-agent` is only the internal Python
+  CLI/package name for evidence bundle preparation.
+- GitHub repository description is Chinese: `视频链接/本地视频 -> 本地证据包 -> 中文图文报告的 AI agent 工作流`.
+- `README.md`, `RELEASE_NOTES.md`, and `plugins/video-report-agent/PLUGIN_README.md` now start with Chinese
+  public-facing introductions before English notes.
 - Local release tag `v0.1.0-alpha.1` has been pushed to GitHub as the first alpha snapshot.
 - Current GitHub prerelease is `video-report-agent 0.1.0-alpha.2` at
   `https://github.com/chennw2g/video-report-agent/releases/tag/v0.1.0-alpha.2`.
@@ -52,9 +57,16 @@ external tool state, or recommended next steps.
 
 - Current branch: `main`.
 - Current branch tracks `origin/main`.
-- Current working tree: clean after the alpha.2 release documentation commit.
+- Current working tree: clean after the alpha.2 release documentation commit, except for the public-facing
+  Chinese intro/name cleanup until committed.
 - GitHub remote: `origin` -> `https://github.com/chennw2g/video-report-agent.git`.
 - Latest validation in this work session:
+  - Public-facing docs cleanup on 2026-06-15 22:48 +08:00:
+    - `README.md` title changed from `video-bundle-agent` to `Video Report Agent`.
+    - Added Chinese public intro and naming explanation that separates product name from internal CLI name.
+    - Added Chinese intro to `RELEASE_NOTES.md` and `plugins/video-report-agent/PLUGIN_README.md`.
+    - Updated GitHub repo description through `gh repo edit`.
+    - No functional code changed; docs-only update.
   - Release notes follow-up on 2026-06-15 22:38 +08:00:
     - `RELEASE_NOTES.md` and `CHANGELOG.md` now target `0.1.0-alpha.2`.
     - `v0.1.0-alpha.2` is created from the final release documentation commit on `main`.

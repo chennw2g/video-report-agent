@@ -1,32 +1,124 @@
-# video-bundle-agent
+# Video Report Agent
 
-`video-bundle-agent` is a lightweight Python tool for turning video sources into a Codex-readable bundle.
+中文 | [English](#english-summary)
 
-It does not summarize videos. Its job is only to collect, normalize, and package source material:
+`Video Report Agent` 是一个本地视频资料准备与中文图文报告生成工作流。目标是让 AI agent 能尽可能完整地“看到”一个视频：读取视频链接或本地视频，采集字幕/转录、关键截图、元数据、评论和诊断信息，然后生成可复用的证据包，并基于证据输出中文 quick/deep HTML 与长图报告。
 
-- metadata
-- transcript, subtitles, or local audio transcription
-- comments and audience feedback
-- optional danmaku when explicitly requested
-- screenshots or slide frames
-- provider diagnostics
-- a manifest that tells Codex what was collected and what failed
+当前支持：
+
+- YouTube、Bilibili、小红书、本地视频；
+- 元数据、原生章节、字幕、自动字幕、本地音频转录；
+- YouTube / Bilibili / 小红书评论采集，其中评论默认按有界样本处理；
+- 视频截图、关键帧和面向报告的视觉证据选择；
+- 中文 quick / deep 图文报告，默认输出 HTML，推荐导出长 PNG；
+- Codex 插件封装，以及可供 Claude Code、Cursor、Cline、Gemini CLI 等其他 agent 复用的 Python CLI。
+
+## 名称说明
+
+对外项目名称是 `Video Report Agent`。
+
+`video-bundle-agent` 是项目内部的 Python CLI / 包名，负责“证据包准备”这一层能力。它不会直接代表整个产品名称；整个项目的完整目标是：
+
+```text
+视频链接或本地视频 -> 证据包 -> 中文图文报告
+```
+
+也就是说：
+
+- `Video Report Agent`：对外产品 / 插件 / GitHub 项目名称；
+- `video-bundle-agent`：内部 CLI 名称，用于采集、转录、截图、生成 bundle；
+- `video-bundle-prep`：准备证据包的 agent skill；
+- `video-report`：读取证据并生成最终中文报告的 agent skill。
+
+## 快速安装
+
+Windows:
+
+```powershell
+.\scripts\bootstrap.ps1 -InstallUv -WithPlaywright -WithWhisperCpp -InstallPlugin
+uv run video-bundle-agent doctor
+```
+
+macOS:
+
+```bash
+bash scripts/bootstrap-macos.sh --install-tools --with-playwright --with-whisper-cpp --install-plugin
+uv run video-bundle-agent doctor
+```
+
+需要完整平台能力时，可安装可选组件：
+
+Windows:
+
+```powershell
+.\scripts\bootstrap.ps1 `
+  -InstallUv `
+  -InstallWindowsTools `
+  -WithPlaywright `
+  -WithWhisperCpp `
+  -WithFunASR `
+  -WithMediaCrawler `
+  -InstallPlugin
+```
+
+macOS:
+
+```bash
+bash scripts/bootstrap-macos.sh \
+  --install-tools \
+  --with-playwright \
+  --with-whisper-cpp \
+  --with-funasr \
+  --with-mediacrawler \
+  --install-plugin
+```
+
+## 典型用法
+
+在 Codex 中安装插件后，可以直接给出视频链接并要求生成报告。插件会自动走：
+
+```text
+识别平台 -> 采集元数据/字幕/转录/截图/评论 -> 生成 report.input.json -> 写中文报告 -> 渲染 HTML/长图
+```
+
+也可以直接使用 CLI：
+
+```powershell
+uv run video-bundle-agent analyze "https://www.youtube.com/watch?v=474wZZHoWN4" `
+  --out outputs/youtube-smoke `
+  --comments `
+  --max-comments 100 `
+  --visual-recall medium `
+  --no-llm
+
+uv run video-bundle-agent check-bundle outputs/youtube-smoke
+uv run video-bundle-agent prepare-report outputs/youtube-smoke --max-images 12
+```
+
+## 当前边界
+
+- 核心 Python CLI 不调用大模型，只负责生成可审计的本地证据包。
+- 最终报告由 agent skill 读取证据后生成。
+- 不默认抓取全量评论。
+- 不绕过平台风控、验证码、付费或 DRM。
+- 不把 cookies、API keys、登录态、原始媒体、输出报告提交到 git。
+- 小红书评论依赖 MediaCrawler 的登录态；首次使用可能需要浏览器登录验证。
+
+## English Summary
+
+`Video Report Agent` is a local workflow for preparing video evidence and generating Chinese visual reports.
+It takes a video URL or local video, collects metadata, chapters, subtitles/transcripts, key screenshots,
+comments, audience feedback, diagnostics, and manifest files, then lets an AI agent write a quick or deep
+Chinese HTML/long-PNG report from auditable local evidence.
+
+The public product name is `Video Report Agent`. The Python CLI is still named `video-bundle-agent` because
+it performs the lower-level evidence bundle preparation step.
 
 The previous `steipete/summarize` fork has already been archived under:
 
 ```text
 archives/summarize-reference-20260606-020158/
 ```
-
-## Current Scope
-
-The first version should produce a stable local bundle from a video URL:
-
-```text
-video URL -> provider fetch -> normalized assets -> bundle directory
-```
-
-The bundle should be useful for later Codex analysis, report writing, or manual review.
 
 ## Non-goals
 

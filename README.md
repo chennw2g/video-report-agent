@@ -50,8 +50,39 @@ src/video_bundle_agent/     Python package and CLI
 tests/                      pytest tests
 skills/video-bundle-prep/   Codex skill for preparing reusable bundle evidence
 skills/video-report/        Codex skill for writing final quick/deep reports
+plugins/video-report-agent-local/
+                             Local Codex plugin wrapper for this workstation
 archives/                   Local reference archives, ignored by git
 ```
+
+## Local Codex Plugin
+
+The current local plugin wrapper lives in:
+
+```text
+plugins/video-report-agent-local/
+```
+
+Install or refresh it into the personal Codex plugin directory:
+
+```powershell
+.\scripts\install-local-plugin.ps1
+```
+
+This copies the plugin to:
+
+```text
+C:\Users\chenn\plugins\video-report-agent-local
+```
+
+and updates:
+
+```text
+C:\Users\chenn\.agents\plugins\marketplace.json
+```
+
+The local plugin is workstation-specific. It points the skills at this checkout and the existing local
+toolchain. It is not the portable GitHub release package yet.
 
 ## Development
 

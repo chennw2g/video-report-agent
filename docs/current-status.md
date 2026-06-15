@@ -1,6 +1,6 @@
 # Current Status
 
-Last updated: 2026-06-15 01:45 +08:00
+Last updated: 2026-06-15 13:15 +08:00
 
 This file is the short project snapshot to read after context compaction. Update it after every material
 project change that affects capabilities, provider state, report contracts, validation status, known blockers,
@@ -16,17 +16,17 @@ external tool state, or recommended next steps.
     `report.input.json`.
   - `video-report`: writes final Chinese HTML and preferred long-PNG reports. It can call the prep workflow
     automatically when the user gives it a raw link or local video.
-- Plugin shell creation was deferred while the quick/deep report structure and visual output stabilized.
-  The project is now ready to enter the plugin packaging phase.
+- A local Codex plugin shell now exists at `plugins/video-report-agent-local/` and has been installed to
+  `C:\Users\chenn\plugins\video-report-agent-local` through the personal marketplace at
+  `C:\Users\chenn\.agents\plugins\marketplace.json`. This is a local-machine wrapper around the existing
+  project checkout, not the public GitHub-ready distribution yet.
 - Minimum report evidence remains transcript or audio transcription plus screenshots/keyframes. Comments are
   optional.
 
 ## Git State
 
 - Current branch: `main`.
-- Current working tree: contains the current report metric/table, plan-guided screenshot extraction,
-  Xiaohongshu comments/transcription parallelization fixes, and baseline local-video provider until the
-  next commit.
+- Current working tree: contains the local plugin packaging files until the next commit.
 - Latest validation in this work session:
   - `uv run pytest tests/test_report_renderer.py tests/test_visual_recall.py tests/test_xiaohongshu_provider.py`:
     26 passed after the fixed header metric, planned screenshot extraction, and Xiaohongshu parallelization
@@ -36,11 +36,25 @@ external tool state, or recommended next steps.
   - `uv run video-bundle-agent doctor`: warning only; FunASR and whisper.cpp are available, optional
     `tesseract` is missing. `faster-whisper` is no longer part of the checked route.
   - `uv build`: passed and produced ignored local `dist/` wheel/sdist artifacts.
+  - `uv run python C:\Users\chenn\.codex\skills\.system\plugin-creator\scripts\validate_plugin.py plugins\video-report-agent-local`:
+    passed.
+  - `uv run python C:\Users\chenn\.codex\skills\.system\plugin-creator\scripts\validate_plugin.py C:\Users\chenn\plugins\video-report-agent-local`:
+    passed.
+  - Personal marketplace helper reads `personal` from
+    `C:\Users\chenn\.agents\plugins\marketplace.json` after rewriting the file as UTF-8 without BOM.
+  - `codex plugin add video-bundle-agent-local@personal` was attempted from PowerShell before the rename,
+    but WindowsApps returned `Access is denied`; use the Codex app marketplace deeplink or a fresh app
+    thread to complete UI-side installation/visibility.
+  - The plugin was renamed to `video-report-agent-local` / `Video Report Agent`; the install script removes
+    the old `video-bundle-agent-local` entry and directory when refreshing the local plugin.
+  - User-side check: the user installed the `Video Report Agent` plugin in Codex and confirmed this local
+    packaging version works.
 - Global skill sync:
   - `C:\Users\chenn\.codex\skills\video-report\SKILL.md` matches the repo copy.
   - `C:\Users\chenn\.codex\skills\video-report\scripts\render_report.py` matches the repo copy.
   - `C:\Users\chenn\.codex\skills\video-bundle-prep\SKILL.md` matches the repo copy.
 - Latest commits:
+  - `7a927fb Harden video prep and report workflow`
   - `8518379 Harden report workflow and provider normalization`
   - `4ca5b4d Use GPU whisper turbo for English transcription`
   - `28d540c Add ASR benchmark tooling`
@@ -445,16 +459,17 @@ The provider records these as `PERMISSION_REQUIRED` or `COOKIE_REQUIRED` diagnos
 - `faster-whisper` is intentionally not used or checked. Current production local transcription uses the CUDA
   `whisper.cpp` CLI at `D:\Workshop\whisper.cpp\v1.8.6-cuda\Release\whisper-cli.exe` for English and other
   non-Chinese audio, with `ggml-large-v3-turbo.bin` as the preferred local model. Chinese audio uses FunASR.
-- The full plugin shell has not been created yet; this is now the next packaging task rather than a deferred
-  product decision.
+- The local plugin shell is created and installed. The public release-grade plugin packaging is still pending:
+  cross-machine bootstrap, dependency installation docs, license review, third-party notices, and portable
+  configuration need to be added before GitHub publication.
 - Copying selected screenshots into `screenshots/selected/`, OCR-based slide filtering, complex visual
   deduplication, sharpness/brightness scoring, and agent-assisted final body-image placement remain future
   work.
 
 ## Next Decisions
 
-- Start plugin packaging around the existing Python CLI, `video-bundle-prep` skill, `video-report` skill,
-  renderer, and shared docs.
+- Start release-grade packaging around the existing Python CLI, `video-bundle-prep` skill, `video-report`
+  skill, renderer, and shared docs. Keep the local plugin as the working baseline.
 - Keep Xiaohongshu comments on the MediaCrawler official detail/jsonl path.
 - Avoid repeated QR/SMS debugging unless MediaCrawler's saved profile actually expires or returns a platform
   verification gate.

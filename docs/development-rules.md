@@ -39,11 +39,14 @@ These rules keep `video-bundle-agent` focused on producing reliable, inspectable
   video link or local video file, but report writing remains separate from evidence preparation.
 - Semantic video-type classification belongs in Codex, not in provider keyword rules.
 - Report generation belongs in Codex after bundle creation, using bundle files and diagnostics as evidence.
-- The eventual project packaging surface is a Codex plugin that contains both skills, shared documentation,
+- The project packaging surface is a Codex plugin that contains both skills, shared documentation,
   helper scripts, and the local bundle engine entrypoints. It should not collapse provider collection,
   evidence preparation, and final report writing into one opaque step.
-- Defer the plugin shell/manifest until quick/deep report structure and visual output design are stable.
-  For now, maintain the two skills and Python CLI directly.
+- Maintain the local plugin shell under `plugins/video-report-agent-local/`. The local shell may include
+  workstation-specific paths, but public release packaging must later move those paths into documented
+  configuration and bootstrap steps.
+- Keep the two skill responsibilities and Python CLI distinct inside the plugin; do not merge prep and report
+  into one opaque summarizer.
 
 ## Phase 1 Acceptance
 

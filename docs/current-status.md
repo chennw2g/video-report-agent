@@ -50,7 +50,7 @@ external tool state, or recommended next steps.
 - Latest validation in this work session:
   - GitHub publish-readiness update on 2026-06-15 18:20 +08:00:
     - Added GitHub CI workflow, issue templates, PR template, `CONTRIBUTING.md`, `SECURITY.md`,
-      `CHANGELOG.md`, `docs/github-publish.md`, and full `LICENSE`.
+      `CHANGELOG.md`, `RELEASE_NOTES.md`, `docs/github-publish.md`, and full `LICENSE`.
     - Updated `pyproject.toml` with GPL-3.0-or-later license metadata and classifiers.
     - Replaced third-party notices placeholder with observed direct dependency version/license table.
     - Validation after publish-readiness update:

@@ -1,6 +1,6 @@
 # Current Status
 
-Last updated: 2026-06-15 21:25 +08:00
+Last updated: 2026-06-15 22:14 +08:00
 
 This file is the short project snapshot to read after context compaction. Update it after every material
 project change that affects capabilities, provider state, report contracts, validation status, known blockers,
@@ -42,6 +42,8 @@ external tool state, or recommended next steps.
   `bilibili-api-python`, whose observed package metadata is GPL-3.0-or-later.
 - Public GitHub repository is configured at `https://github.com/chennw2g/video-report-agent`.
 - Local release tag `v0.1.0-alpha.1` has been pushed to GitHub.
+- GitHub prerelease `video-report-agent 0.1.0-alpha.1` is published at
+  `https://github.com/chennw2g/video-report-agent/releases/tag/v0.1.0-alpha.1`.
 - Minimum report evidence remains transcript or audio transcription plus screenshots/keyframes. Comments are
   optional.
 
@@ -49,13 +51,20 @@ external tool state, or recommended next steps.
 
 - Current branch: `main`.
 - Current branch tracks `origin/main`.
-- Current working tree: clean after release packaging commits, except for this status update until committed.
+- Current working tree: clean after the release and CI follow-up commits.
 - GitHub remote: `origin` -> `https://github.com/chennw2g/video-report-agent.git`.
 - Latest validation in this work session:
+  - GitHub CI follow-up on 2026-06-15 22:13 +08:00:
+    - Latest pushed code commit: `2c0e58a Use Node 24 for GitHub Actions`.
+    - GitHub Actions run `27552357917` completed successfully on `main`.
+    - CI passed on both `windows-latest / Python 3.12` and `macos-latest / Python 3.12`.
+    - `.github/workflows/ci.yml` sets `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` to avoid the Node 20
+      deprecation warning from JavaScript-based GitHub Actions.
   - GitHub publish on 2026-06-15 21:25 +08:00:
     - GitHub CLI authentication succeeded for account `chennw2g`.
     - Created public repository `https://github.com/chennw2g/video-report-agent`.
     - Pushed `main` and tag `v0.1.0-alpha.1`.
+    - Published prerelease `v0.1.0-alpha.1`.
   - GitHub publish-readiness update on 2026-06-15 18:20 +08:00:
     - Added GitHub CI workflow, issue templates, PR template, `CONTRIBUTING.md`, `SECURITY.md`,
       `CHANGELOG.md`, `RELEASE_NOTES.md`, `docs/github-publish.md`, and full `LICENSE`.
@@ -124,17 +133,16 @@ external tool state, or recommended next steps.
   - `C:\Users\chenn\.codex\skills\video-report\SKILL.md` matches the repo copy.
   - `C:\Users\chenn\.codex\skills\video-report\scripts\render_report.py` matches the repo copy.
   - `C:\Users\chenn\.codex\skills\video-bundle-prep\SKILL.md` matches the repo copy.
-- Latest commits:
+- Latest release-related commits:
+  - `2c0e58a Use Node 24 for GitHub Actions`
+  - `87d8737 Record GitHub publication status`
+  - `9a82a0c Add alpha release notes`
+  - `2e76dd2 Prepare GitHub release packaging`
   - `ad9dd7b Add local Video Report Agent plugin`
   - `7a927fb Harden video prep and report workflow`
   - `8518379 Harden report workflow and provider normalization`
   - `0ca7eae Document packaging readiness`
   - `4ca5b4d Use GPU whisper turbo for English transcription`
-  - `28d540c Add ASR benchmark tooling`
-  - `b8a66a8 Prefer turbo whisper model and add FunASR extra`
-  - `f374a36 Add plan-guided visual evidence selection`
-  - `a0d28c0 Finalize Xiaohongshu MediaCrawler workflow and report visuals`
-  - `79956e1 Fix report metric card label alignment`
 
 ## Provider State
 

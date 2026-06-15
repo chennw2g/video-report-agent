@@ -1,6 +1,6 @@
 # Current Status
 
-Last updated: 2026-06-15 18:20 +08:00
+Last updated: 2026-06-15 21:25 +08:00
 
 This file is the short project snapshot to read after context compaction. Update it after every material
 project change that affects capabilities, provider state, report contracts, validation status, known blockers,
@@ -40,14 +40,22 @@ external tool state, or recommended next steps.
   Windows and macOS.
 - The project license is GPL-3.0-or-later because the current Bilibili provider directly depends on
   `bilibili-api-python`, whose observed package metadata is GPL-3.0-or-later.
+- Public GitHub repository is configured at `https://github.com/chennw2g/video-report-agent`.
+- Local release tag `v0.1.0-alpha.1` has been pushed to GitHub.
 - Minimum report evidence remains transcript or audio transcription plus screenshots/keyframes. Comments are
   optional.
 
 ## Git State
 
 - Current branch: `main`.
-- Current working tree: contains release packaging changes until the next commit.
+- Current branch tracks `origin/main`.
+- Current working tree: clean after release packaging commits, except for this status update until committed.
+- GitHub remote: `origin` -> `https://github.com/chennw2g/video-report-agent.git`.
 - Latest validation in this work session:
+  - GitHub publish on 2026-06-15 21:25 +08:00:
+    - GitHub CLI authentication succeeded for account `chennw2g`.
+    - Created public repository `https://github.com/chennw2g/video-report-agent`.
+    - Pushed `main` and tag `v0.1.0-alpha.1`.
   - GitHub publish-readiness update on 2026-06-15 18:20 +08:00:
     - Added GitHub CI workflow, issue templates, PR template, `CONTRIBUTING.md`, `SECURITY.md`,
       `CHANGELOG.md`, `RELEASE_NOTES.md`, `docs/github-publish.md`, and full `LICENSE`.

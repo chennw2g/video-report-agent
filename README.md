@@ -52,8 +52,79 @@ skills/video-bundle-prep/   Codex skill for preparing reusable bundle evidence
 skills/video-report/        Codex skill for writing final quick/deep reports
 plugins/video-report-agent-local/
                              Local Codex plugin wrapper for this workstation
+plugins/video-report-agent/
+                             Portable Codex plugin wrapper for GitHub/release installs
 archives/                   Local reference archives, ignored by git
 ```
+
+## Release Install
+
+For a fresh clone, start here:
+
+Windows:
+
+```powershell
+.\scripts\bootstrap.ps1 -InstallUv -WithPlaywright -WithWhisperCpp -InstallPlugin
+uv run video-bundle-agent doctor
+```
+
+macOS:
+
+```bash
+bash scripts/bootstrap-macos.sh --install-tools --with-playwright --with-whisper-cpp --install-plugin
+uv run video-bundle-agent doctor
+```
+
+For fuller local platform support, add optional switches:
+
+Windows:
+
+```powershell
+.\scripts\bootstrap.ps1 `
+  -InstallUv `
+  -InstallWindowsTools `
+  -WithPlaywright `
+  -WithWhisperCpp `
+  -WithFunASR `
+  -WithMediaCrawler `
+  -InstallPlugin
+```
+
+macOS:
+
+```bash
+bash scripts/bootstrap-macos.sh \
+  --install-tools \
+  --with-playwright \
+  --with-whisper-cpp \
+  --with-funasr \
+  --with-mediacrawler \
+  --install-plugin
+```
+
+The portable Codex plugin is:
+
+```text
+plugins/video-report-agent/
+```
+
+The plugin display name is `Video Report Agent`. It is a workflow wrapper; open the cloned repository as the
+Codex workspace and run the Python CLI from the project root.
+
+Release docs:
+
+- `docs/install.md`
+- `docs/configuration.md`
+- `docs/platform-support.md`
+- `docs/troubleshooting.md`
+- `docs/release-checklist.md`
+- `docs/github-publish.md`
+
+## License
+
+This project is licensed under GPL-3.0-or-later. The current provider stack includes
+`bilibili-api-python`, which is GPL-3.0-or-later, so the repository uses a compatible copyleft license for
+the first public alpha.
 
 ## Local Codex Plugin
 
@@ -81,8 +152,8 @@ and updates:
 C:\Users\chenn\.agents\plugins\marketplace.json
 ```
 
-The local plugin is workstation-specific. It points the skills at this checkout and the existing local
-toolchain. It is not the portable GitHub release package yet.
+The local plugin is workstation-specific and kept as the tested wrapper for this machine. For public
+release or another user's clone, use `plugins/video-report-agent/` and `scripts/install-plugin.ps1`.
 
 ## Development
 
@@ -141,8 +212,9 @@ If Chrome's default profile cannot expose a DevTools endpoint, use the logged-in
 
 Xiaohongshu basic provider uses explicit cookies when supplied, HTML note extraction, media download,
 local transcription for video notes, and visual recall. Comments are collected through the managed
-MediaCrawler checkout under `D:\W\Codex\external\MediaCrawler` using its official detail/jsonl workflow.
-`XHS-Downloader` remains an external reference/tool under `D:\Workshop\XHS-Downloader`.
+MediaCrawler checkout using its official detail/jsonl workflow. The portable default is
+`external/MediaCrawler` under the cloned repository; override it with `XHS_MEDIACRAWLER_PATH`.
+`XHS-Downloader` remains an external reference/tool and is not imported into the main package.
 
 ```powershell
 .\scripts\refresh-xiaohongshu-cookies.ps1
@@ -282,11 +354,10 @@ For development smoke tests, `--force-transcription` can exercise the local tran
 subtitles exist. It is disabled by default and should not be used for normal report runs.
 
 Whisper model selection is local and configurable for English and other non-Chinese transcription. Set
-`VIDEO_BUNDLE_AGENT_WHISPER_MODEL` or `WHISPER_MODEL` to force a specific model file. On this workstation,
-the active whisper.cpp CLI is the CUDA build at
-`D:\Workshop\whisper.cpp\v1.8.6-cuda\Release\whisper-cli.exe`; `ggml-large-v3-turbo.bin` is the current
-English/other-language default when that CUDA build is available. Whisper base remains a CPU-only speed
-fallback candidate.
+`VIDEO_BUNDLE_AGENT_TOOL_ROOT` to point at an external tool tree and set `VIDEO_BUNDLE_AGENT_WHISPER_MODEL`
+or `WHISPER_MODEL` to force a specific model file. On the original workstation, the active whisper.cpp CLI
+is a CUDA build and `ggml-large-v3-turbo.bin` is the preferred English/other-language model. Whisper base
+remains a CPU-only speed fallback candidate.
 
 Language detection uses its own lightweight whisper.cpp model preference. Set
 `VIDEO_BUNDLE_AGENT_WHISPER_LANGUAGE_MODEL` or `WHISPER_LANGUAGE_MODEL` to override it; otherwise the engine

@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+        python-version: ["3.12"]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Sync dependencies
+        run: uv sync --locked
+
+      - name: Ruff
+        run: uv run ruff check
+
+      - name: Pytest
+        run: uv run pytest
+
+      - name: Build package
+        run: uv build
+
+      - name: Validate release plugin manifest
+        run: uv run python -m json.tool plugins/video-report-agent/.codex-plugin/plugin.json
+
+      - name: Parse macOS shell scripts
+        if: runner.os == 'macOS'
+        run: bash -n scripts/bootstrap-macos.sh scripts/install-plugin-macos.sh scripts/install-whisper-cpp-macos.sh scripts/refresh-cookies-macos.sh
+
+      - name: Parse Windows PowerShell scripts
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $files = @(
+            'scripts/bootstrap.ps1',
+            'scripts/install-plugin.ps1',
+            'scripts/install-whisper-cpp.ps1',
+            'scripts/refresh-youtube-cookies.ps1',
+            'scripts/refresh-bilibili-cookies.ps1',
+            'scripts/refresh-xiaohongshu-cookies.ps1'
+          )
+          foreach ($file in $files) {
+            $null = [scriptblock]::Create((Get-Content -Raw $file))
+          }

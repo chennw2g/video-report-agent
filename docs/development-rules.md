@@ -39,12 +39,18 @@ These rules keep `video-bundle-agent` focused on producing reliable, inspectable
   video link or local video file, but report writing remains separate from evidence preparation.
 - Semantic video-type classification belongs in Codex, not in provider keyword rules.
 - Report generation belongs in Codex after bundle creation, using bundle files and diagnostics as evidence.
-- The project packaging surface is a Codex plugin that contains both skills, shared documentation,
-  helper scripts, and the local bundle engine entrypoints. It should not collapse provider collection,
-  evidence preparation, and final report writing into one opaque step.
-- Maintain the local plugin shell under `plugins/video-report-agent-local/`. The local shell may include
-  workstation-specific paths, but public release packaging must later move those paths into documented
-  configuration and bootstrap steps.
+- The project packaging surface is a Codex plugin plus the Python CLI repository. The release plugin under
+  `plugins/video-report-agent/` contains both skills and renderer support, while the cloned repository root
+  remains the Python runtime and evidence workspace.
+- Maintain the local plugin shell under `plugins/video-report-agent-local/` for this workstation. It may
+  include workstation-specific assumptions. Keep the portable release plugin under `plugins/video-report-agent/`
+  free of machine-specific paths and route external tools through documented environment variables,
+  Windows PowerShell scripts, and macOS Bash scripts.
+- Windows release setup entrypoints are `scripts/bootstrap.ps1`, `scripts/install-plugin.ps1`, and
+  `scripts/install-whisper-cpp.ps1`.
+- macOS release setup entrypoints are `scripts/bootstrap-macos.sh`, `scripts/install-plugin-macos.sh`,
+  `scripts/install-whisper-cpp-macos.sh`, and `scripts/refresh-cookies-macos.sh`; they assume Homebrew for
+  system tools such as `uv`, `ffmpeg`, `node`, and `whisper-cpp`.
 - Keep the two skill responsibilities and Python CLI distinct inside the plugin; do not merge prep and report
   into one opaque summarizer.
 

@@ -1,0 +1,23 @@
+{
+  "name": "video-report-agent",
+  "version": "0.1.0",
+  "description": "Codex workflow for preparing video evidence and writing Chinese video reports.",
+  "author": {
+    "name": "Chenn"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Video Report Agent",
+    "shortDescription": "Turn video links or local files into Chinese quick/deep image-text reports.",
+    "longDescription": "A Codex plugin wrapper around the video-bundle-agent Python CLI. It provides two skills: video-bundle-prep for collecting and preparing evidence bundles, and video-report for writing quick or deep Chinese HTML/PNG reports from that evidence.",
+    "developerName": "Chenn",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write", "Interactive"],
+    "defaultPrompt": [
+      "Create a Chinese quick report from this video link",
+      "Analyze this video in deep mode",
+      "Create an image-text report from this local video"
+    ],
+    "brandColor": "#0F766E"
+  }
+}

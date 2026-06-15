@@ -31,6 +31,7 @@ from video_bundle_agent.media.transcription import (
 from video_bundle_agent.media.visual_recall import create_visual_recall_slides
 from video_bundle_agent.providers.assets import attach_thumbnail_asset
 from video_bundle_agent.providers.url_resolution import normalize_xiaohongshu_url
+from video_bundle_agent.tools.paths import mediacrawler_path as configured_mediacrawler_path
 from video_bundle_agent.tools.process import CommandError, run_command
 
 XHS_USER_AGENT = (
@@ -532,7 +533,7 @@ def _comment_stats(items: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _mediacrawler_path() -> Path:
-    return Path(os.environ.get("XHS_MEDIACRAWLER_PATH", r"D:\W\Codex\external\MediaCrawler"))
+    return configured_mediacrawler_path()
 
 
 def _mediacrawler_raw_dir(output_dir: Path) -> Path:

@@ -7,7 +7,8 @@ param(
   [string]$UserDataDir = (Join-Path $env:APPDATA "video-bundle-agent\chrome-xiaohongshu-profile"),
   [switch]$KeepBrowserOpen,
   [switch]$OpenOnly,
-  [switch]$NoPrompt
+  [switch]$NoPrompt,
+  [string]$NodePath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -45,9 +46,20 @@ if (-not $ChromePath) {
   throw "Chrome or Edge was not found. Pass -ChromePath <path-to-browser.exe>."
 }
 
-$node = "D:\Workshop\NodeJS\node.exe"
-if (-not (Test-Path -LiteralPath $node)) {
-  $node = "node"
+if (-not $NodePath) {
+  $toolRoot = $env:VIDEO_BUNDLE_AGENT_TOOL_ROOT
+  if (-not $toolRoot) {
+    $toolRoot = $env:VIDEO_REPORT_AGENT_TOOL_ROOT
+  }
+  $nodeCandidates = @()
+  if ($toolRoot) {
+    $nodeCandidates += (Join-Path $toolRoot "NodeJS\node.exe")
+  }
+  $nodeCandidates += "D:\Workshop\NodeJS\node.exe"
+  $NodePath = Resolve-FirstExistingPath $nodeCandidates
+}
+if (-not $NodePath) {
+  $NodePath = "node"
 }
 
 $exporter = Join-Path $PSScriptRoot "export-youtube-cookies-cdp.mjs"
@@ -91,7 +103,7 @@ if (-not $NoPrompt) {
   Start-Sleep -Seconds 5
 }
 
-& $node $exporter --port $Port --output $OutputPath --domains xiaohongshu.com,xhslink.com
+& $NodePath $exporter --port $Port --output $OutputPath --domains xiaohongshu.com,xhslink.com
 $code = $LASTEXITCODE
 if ($code -ne 0) {
   throw "Cookie export failed with exit code $code."

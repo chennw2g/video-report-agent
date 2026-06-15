@@ -1,6 +1,6 @@
 # Current Status
 
-Last updated: 2026-06-15 13:15 +08:00
+Last updated: 2026-06-15 18:20 +08:00
 
 This file is the short project snapshot to read after context compaction. Update it after every material
 project change that affects capabilities, provider state, report contracts, validation status, known blockers,
@@ -16,18 +16,81 @@ external tool state, or recommended next steps.
     `report.input.json`.
   - `video-report`: writes final Chinese HTML and preferred long-PNG reports. It can call the prep workflow
     automatically when the user gives it a raw link or local video.
-- A local Codex plugin shell now exists at `plugins/video-report-agent-local/` and has been installed to
-  `C:\Users\chenn\plugins\video-report-agent-local` through the personal marketplace at
-  `C:\Users\chenn\.agents\plugins\marketplace.json`. This is a local-machine wrapper around the existing
-  project checkout, not the public GitHub-ready distribution yet.
+- Two Codex plugin wrappers now exist:
+  - `plugins/video-report-agent-local/`: tested local-machine wrapper installed on this workstation.
+  - `plugins/video-report-agent/`: portable release wrapper for GitHub-style installs. It has no hard-coded
+    workstation paths and expects Codex to run the Python CLI from the cloned repository root.
+- Release bootstrap/docs now exist for Windows and macOS: `scripts/bootstrap.ps1`,
+  `scripts/bootstrap-macos.sh`, `scripts/install-plugin.ps1`, `scripts/install-plugin-macos.sh`,
+  `.env.example`, `docs/install.md`, `docs/configuration.md`, `docs/platform-support.md`,
+  `docs/troubleshooting.md`, `docs/release-checklist.md`, and `THIRD_PARTY_NOTICES.md`.
+- whisper.cpp release installation is now scripted through `scripts/install-whisper-cpp.ps1` and exposed from
+  `scripts/bootstrap.ps1 -WithWhisperCpp`. It downloads the official `ggml-org/whisper.cpp` release runtime
+  and default model files (`ggml-large-v3-turbo.bin` plus `ggml-base.bin`) into the configured tool root.
+- macOS whisper.cpp installation is scripted through `scripts/install-whisper-cpp-macos.sh` and exposed from
+  `scripts/bootstrap-macos.sh --with-whisper-cpp`. It installs Homebrew `whisper-cpp` and downloads the same
+  default model files into `~/.local/share/video-report-agent-tools` unless overridden.
+- Cookie export helper scripts now accept `-NodePath` and otherwise resolve Node through
+  `VIDEO_BUNDLE_AGENT_TOOL_ROOT`, `VIDEO_REPORT_AGENT_TOOL_ROOT`, the original workstation fallback, or
+  normal `PATH`.
+- macOS cookie export uses `scripts/refresh-cookies-macos.sh`, which reuses the shared Node/CDP exporter and
+  supports YouTube, Bilibili, and Xiaohongshu platform presets.
+- GitHub publishing baseline now includes GPL-3.0-or-later `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`,
+  `CHANGELOG.md`, `THIRD_PARTY_NOTICES.md`, GitHub issue/PR templates, and CI workflow coverage for
+  Windows and macOS.
+- The project license is GPL-3.0-or-later because the current Bilibili provider directly depends on
+  `bilibili-api-python`, whose observed package metadata is GPL-3.0-or-later.
 - Minimum report evidence remains transcript or audio transcription plus screenshots/keyframes. Comments are
   optional.
 
 ## Git State
 
 - Current branch: `main`.
-- Current working tree: contains the local plugin packaging files until the next commit.
+- Current working tree: contains release packaging changes until the next commit.
 - Latest validation in this work session:
+  - GitHub publish-readiness update on 2026-06-15 18:20 +08:00:
+    - Added GitHub CI workflow, issue templates, PR template, `CONTRIBUTING.md`, `SECURITY.md`,
+      `CHANGELOG.md`, `docs/github-publish.md`, and full `LICENSE`.
+    - Updated `pyproject.toml` with GPL-3.0-or-later license metadata and classifiers.
+    - Replaced third-party notices placeholder with observed direct dependency version/license table.
+    - Validation after publish-readiness update:
+      - `uv run ruff check`: passed.
+      - `uv run pytest`: 69 passed.
+      - `uv build` with project-local `UV_CACHE_DIR`: passed and built sdist/wheel.
+      - `uv run video-bundle-agent doctor`: warning only; required tools available, optional `tesseract`
+        missing.
+      - Release and local plugin validators passed.
+      - PowerShell script parse check passed.
+  - macOS packaging follow-up on 2026-06-15 17:45 +08:00:
+    - Added `scripts/bootstrap-macos.sh`, `scripts/install-plugin-macos.sh`,
+      `scripts/install-whisper-cpp-macos.sh`, and `scripts/refresh-cookies-macos.sh`.
+    - Updated tool discovery so non-Windows defaults to `~/.local/share/video-report-agent-tools` and
+      `doctor` can find Homebrew `whisper-cli`.
+    - `uv run ruff check`: passed.
+    - `uv run pytest tests\test_tool_paths.py tests\test_doctor.py`: 5 passed.
+    - Follow-up full validation: `uv run pytest`: 69 passed.
+    - Release plugin validator passed for `plugins\video-report-agent`.
+    - Bash syntax validation could not run in this Windows session because `bash` returned WSL
+      `E_ACCESS_DENIED`; macOS runtime validation still needs to be run on an actual macOS host.
+  - Whisper installer follow-up on 2026-06-15 17:23 +08:00:
+    - PowerShell parse check passed for `scripts/install-whisper-cpp.ps1` plus bootstrap/plugin/cookie helper
+      scripts.
+    - `uv run ruff check`: passed.
+    - `uv run pytest tests\test_tool_paths.py tests\test_doctor.py`: 5 passed.
+    - `uv run python C:\Users\chenn\.codex\skills\.system\plugin-creator\scripts\validate_plugin.py plugins\video-report-agent`:
+      passed.
+    - The installer was not executed to avoid re-downloading large whisper.cpp model files on this machine.
+  - Release packaging validation on 2026-06-15 17:02 +08:00:
+    - PowerShell parse check passed for `scripts/bootstrap.ps1`, `scripts/install-plugin.ps1`,
+      `scripts/install-whisper-cpp.ps1`, and the three cookie refresh scripts.
+    - `uv run ruff check`: passed.
+    - `uv run pytest`: 69 passed.
+    - `uv run video-bundle-agent doctor`: warning only; required tools are available, optional `tesseract`
+      is missing.
+    - `uv run python C:\Users\chenn\.codex\skills\.system\plugin-creator\scripts\validate_plugin.py plugins\video-report-agent`:
+      passed.
+    - `uv run python C:\Users\chenn\.codex\skills\.system\plugin-creator\scripts\validate_plugin.py plugins\video-report-agent-local`:
+      passed.
   - `uv run pytest tests/test_report_renderer.py tests/test_visual_recall.py tests/test_xiaohongshu_provider.py`:
     26 passed after the fixed header metric, planned screenshot extraction, and Xiaohongshu parallelization
     changes.
@@ -54,8 +117,10 @@ external tool state, or recommended next steps.
   - `C:\Users\chenn\.codex\skills\video-report\scripts\render_report.py` matches the repo copy.
   - `C:\Users\chenn\.codex\skills\video-bundle-prep\SKILL.md` matches the repo copy.
 - Latest commits:
+  - `ad9dd7b Add local Video Report Agent plugin`
   - `7a927fb Harden video prep and report workflow`
   - `8518379 Harden report workflow and provider normalization`
+  - `0ca7eae Document packaging readiness`
   - `4ca5b4d Use GPU whisper turbo for English transcription`
   - `28d540c Add ASR benchmark tooling`
   - `b8a66a8 Prefer turbo whisper model and add FunASR extra`
@@ -459,17 +524,23 @@ The provider records these as `PERMISSION_REQUIRED` or `COOKIE_REQUIRED` diagnos
 - `faster-whisper` is intentionally not used or checked. Current production local transcription uses the CUDA
   `whisper.cpp` CLI at `D:\Workshop\whisper.cpp\v1.8.6-cuda\Release\whisper-cli.exe` for English and other
   non-Chinese audio, with `ggml-large-v3-turbo.bin` as the preferred local model. Chinese audio uses FunASR.
-- The local plugin shell is created and installed. The public release-grade plugin packaging is still pending:
-  cross-machine bootstrap, dependency installation docs, license review, third-party notices, and portable
-  configuration need to be added before GitHub publication.
+- Release packaging baseline is present for Windows and macOS, but final public-release hardening still needs
+  validation from clean Windows and macOS clones plus a full dependency/license review. Windows whisper.cpp
+  CPU binary/model installation is scripted; macOS uses Homebrew `whisper-cpp` plus scripted model downloads.
+  CUDA installs still depend on compatible NVIDIA runtime availability on the target machine.
 - Copying selected screenshots into `screenshots/selected/`, OCR-based slide filtering, complex visual
   deduplication, sharpness/brightness scoring, and agent-assisted final body-image placement remain future
   work.
 
 ## Next Decisions
 
-- Start release-grade packaging around the existing Python CLI, `video-bundle-prep` skill, `video-report`
-  skill, renderer, and shared docs. Keep the local plugin as the working baseline.
+- Validate the portable release plugin and bootstrap path from clean Windows and macOS checkouts before
+  publishing to GitHub.
+- Run a macOS smoke when a macOS host is available: `bash scripts/bootstrap-macos.sh --install-tools
+  --with-playwright --with-whisper-cpp --install-plugin`, `uv run video-bundle-agent doctor`, and at least
+  one YouTube or local-video bundle/report flow.
+- Decide whether the first public release should default `bootstrap.ps1 -WithWhisperCpp` to CPU for maximum
+  compatibility or document CUDA backend selection more prominently for NVIDIA users.
 - Keep Xiaohongshu comments on the MediaCrawler official detail/jsonl path.
 - Avoid repeated QR/SMS debugging unless MediaCrawler's saved profile actually expires or returns a platform
   verification gate.

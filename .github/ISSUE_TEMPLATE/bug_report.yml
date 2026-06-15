@@ -1,0 +1,44 @@
+name: Bug report
+description: Report a reproducible problem in the bundle or report workflow.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong?
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Source platform
+      options:
+        - YouTube
+        - Bilibili
+        - Xiaohongshu
+        - Local video
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: commands
+    attributes:
+      label: Commands
+      description: Paste the commands you ran. Remove cookies, tokens, and private paths if needed.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Paste relevant `diagnostics.json`, `timings.json`, or `doctor` output. Do not paste cookies.
+      render: json
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, uv version, and whether ffmpeg/yt-dlp/whisper.cpp are installed.
+

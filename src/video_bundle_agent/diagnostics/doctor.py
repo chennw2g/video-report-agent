@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import importlib.util
-import os
 import sys
 from importlib import metadata
 from pathlib import Path
 
 from video_bundle_agent.diagnostics.models import DoctorReport, ToolCheck
-from video_bundle_agent.tools.paths import find_executable
+from video_bundle_agent.tools.paths import find_executable, mediacrawler_path
 from video_bundle_agent.tools.process import CommandError, run_command
 
 
@@ -107,7 +106,7 @@ def _check_importable_python_module(name: str, *, required: bool = False) -> Too
 
 
 def _check_mediacrawler() -> ToolCheck:
-    path = Path(os.environ.get("XHS_MEDIACRAWLER_PATH", r"D:\W\Codex\external\MediaCrawler"))
+    path = mediacrawler_path()
     main_path = path / "main.py"
     pyproject_path = path / "pyproject.toml"
     if not main_path.exists() or not pyproject_path.exists():

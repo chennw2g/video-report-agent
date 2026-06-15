@@ -19,10 +19,14 @@ The final user-facing workflow is a Codex plugin-shaped project with two skill r
 The bundle engine remains responsible for collection and frame extraction without LLM calls. AI remains
 responsible for semantic classification, report-mode selection, and final report writing.
 
-Local plugin packaging has started. The repo now contains a local-machine plugin shell at
-`plugins/video-report-agent-local/`, which wraps the existing two skills and Python CLI on this workstation.
-The public GitHub-ready plugin distribution is still a later packaging step because it needs portable
-bootstrap scripts, dependency installation, license review, and third-party notices.
+The repo contains two plugin wrappers:
+
+- `plugins/video-report-agent-local/`: local-machine wrapper for this workstation.
+- `plugins/video-report-agent/`: portable release wrapper for GitHub-style installs.
+
+The release path uses Windows PowerShell scripts, macOS Bash scripts, `.env.example`, and the install docs
+under `docs/`. The plugin remains a workflow wrapper; the cloned repository root is still the Python runtime,
+output workspace, and audit source.
 
 Report content structure is governed by `docs/report-output-contract.md`.
 Report visual style is governed by `docs/report-visual-style.md`.

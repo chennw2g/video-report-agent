@@ -1,0 +1,4 @@
+interface:
+  display_name: "Video Bundle Prep"
+  short_description: "Prepare video evidence bundles for Codex reports"
+  default_prompt: "Prepare a video bundle from this link or local file."

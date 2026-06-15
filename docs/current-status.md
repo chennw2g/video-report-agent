@@ -1,6 +1,6 @@
 # Current Status
 
-Last updated: 2026-06-15 22:14 +08:00
+Last updated: 2026-06-15 22:32 +08:00
 
 This file is the short project snapshot to read after context compaction. Update it after every material
 project change that affects capabilities, provider state, report contracts, validation status, known blockers,
@@ -54,12 +54,18 @@ external tool state, or recommended next steps.
 - Current working tree: clean after the release and CI follow-up commits.
 - GitHub remote: `origin` -> `https://github.com/chennw2g/video-report-agent.git`.
 - Latest validation in this work session:
-  - GitHub CI follow-up on 2026-06-15 22:13 +08:00:
-    - Latest pushed code commit: `2c0e58a Use Node 24 for GitHub Actions`.
-    - GitHub Actions run `27552357917` completed successfully on `main`.
+  - Final GitHub CI release follow-up on 2026-06-15 22:32 +08:00:
+    - Latest pushed code commit: `7e55b61 Pin GitHub Actions release tags`.
+    - GitHub Actions run `27553571363` completed successfully on `main`.
     - CI passed on both `windows-latest / Python 3.12` and `macos-latest / Python 3.12`.
-    - `.github/workflows/ci.yml` sets `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` to avoid the Node 20
-      deprecation warning from JavaScript-based GitHub Actions.
+    - `.github/workflows/ci.yml` now pins current release tags:
+      `actions/checkout@v6.0.3`, `actions/setup-python@v6.2.0`, and `astral-sh/setup-uv@v8.2.0`.
+    - Earlier commit `a4c5b00` failed because `astral-sh/setup-uv` does not publish a floating `v8`
+      action tag; `7e55b61` fixed this by using the exact release tag.
+  - GitHub CI follow-up on 2026-06-15 22:13 +08:00:
+    - Commit `2c0e58a Use Node 24 for GitHub Actions` passed in GitHub Actions run `27552357917`.
+    - That run still emitted a Node 20 deprecation annotation because old action majors were only being
+      forced onto Node 24. The later exact-version action update above supersedes this workaround.
   - GitHub publish on 2026-06-15 21:25 +08:00:
     - GitHub CLI authentication succeeded for account `chennw2g`.
     - Created public repository `https://github.com/chennw2g/video-report-agent`.
@@ -134,15 +140,15 @@ external tool state, or recommended next steps.
   - `C:\Users\chenn\.codex\skills\video-report\scripts\render_report.py` matches the repo copy.
   - `C:\Users\chenn\.codex\skills\video-bundle-prep\SKILL.md` matches the repo copy.
 - Latest release-related commits:
+  - `7e55b61 Pin GitHub Actions release tags`
+  - `a4c5b00 Upgrade GitHub Actions runtime versions`
+  - `b4303d7 Record final GitHub CI status`
   - `2c0e58a Use Node 24 for GitHub Actions`
   - `87d8737 Record GitHub publication status`
   - `9a82a0c Add alpha release notes`
   - `2e76dd2 Prepare GitHub release packaging`
   - `ad9dd7b Add local Video Report Agent plugin`
   - `7a927fb Harden video prep and report workflow`
-  - `8518379 Harden report workflow and provider normalization`
-  - `0ca7eae Document packaging readiness`
-  - `4ca5b4d Use GPU whisper turbo for English transcription`
 
 ## Provider State
 

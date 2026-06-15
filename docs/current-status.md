@@ -1,6 +1,6 @@
 # Current Status
 
-Last updated: 2026-06-15 22:32 +08:00
+Last updated: 2026-06-15 22:38 +08:00
 
 This file is the short project snapshot to read after context compaction. Update it after every material
 project change that affects capabilities, provider state, report contracts, validation status, known blockers,
@@ -41,9 +41,10 @@ external tool state, or recommended next steps.
 - The project license is GPL-3.0-or-later because the current Bilibili provider directly depends on
   `bilibili-api-python`, whose observed package metadata is GPL-3.0-or-later.
 - Public GitHub repository is configured at `https://github.com/chennw2g/video-report-agent`.
-- Local release tag `v0.1.0-alpha.1` has been pushed to GitHub.
-- GitHub prerelease `video-report-agent 0.1.0-alpha.1` is published at
-  `https://github.com/chennw2g/video-report-agent/releases/tag/v0.1.0-alpha.1`.
+- Local release tag `v0.1.0-alpha.1` has been pushed to GitHub as the first alpha snapshot.
+- Current GitHub prerelease is `video-report-agent 0.1.0-alpha.2` at
+  `https://github.com/chennw2g/video-report-agent/releases/tag/v0.1.0-alpha.2`.
+- `v0.1.0-alpha.2` supersedes alpha.1 with final GitHub Actions cleanup.
 - Minimum report evidence remains transcript or audio transcription plus screenshots/keyframes. Comments are
   optional.
 
@@ -51,9 +52,12 @@ external tool state, or recommended next steps.
 
 - Current branch: `main`.
 - Current branch tracks `origin/main`.
-- Current working tree: clean after the release and CI follow-up commits.
+- Current working tree: clean after the alpha.2 release documentation commit.
 - GitHub remote: `origin` -> `https://github.com/chennw2g/video-report-agent.git`.
 - Latest validation in this work session:
+  - Release notes follow-up on 2026-06-15 22:38 +08:00:
+    - `RELEASE_NOTES.md` and `CHANGELOG.md` now target `0.1.0-alpha.2`.
+    - `v0.1.0-alpha.2` is created from the final release documentation commit on `main`.
   - Final GitHub CI release follow-up on 2026-06-15 22:32 +08:00:
     - Latest pushed code commit: `7e55b61 Pin GitHub Actions release tags`.
     - GitHub Actions run `27553571363` completed successfully on `main`.
@@ -139,7 +143,8 @@ external tool state, or recommended next steps.
   - `C:\Users\chenn\.codex\skills\video-report\SKILL.md` matches the repo copy.
   - `C:\Users\chenn\.codex\skills\video-report\scripts\render_report.py` matches the repo copy.
   - `C:\Users\chenn\.codex\skills\video-bundle-prep\SKILL.md` matches the repo copy.
-- Latest release-related commits:
+- Recent release-related commits before this status entry:
+  - `d6f7ee1 Record final release CI status [skip ci]`
   - `7e55b61 Pin GitHub Actions release tags`
   - `a4c5b00 Upgrade GitHub Actions runtime versions`
   - `b4303d7 Record final GitHub CI status`

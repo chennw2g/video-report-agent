@@ -1,6 +1,8 @@
-# video-report-agent 0.1.0-alpha.1
+# video-report-agent 0.1.0-alpha.2
 
 First public-ready alpha for local video report workflows.
+
+This supersedes `0.1.0-alpha.1` with final GitHub Actions cleanup and release-status documentation.
 
 ## What Is Included
 
@@ -14,6 +16,8 @@ First public-ready alpha for local video report workflows.
 - whisper.cpp installer scripts and model download support.
 - Xiaohongshu MediaCrawler integration path for bounded top-level comments.
 - GitHub CI for Windows and macOS.
+- GitHub Actions release tags pinned to current exact versions:
+  `actions/checkout@v6.0.3`, `actions/setup-python@v6.2.0`, and `astral-sh/setup-uv@v8.2.0`.
 
 ## Install
 

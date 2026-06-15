@@ -2,11 +2,9 @@
 
 `Video Report Agent` 是一个本地视频资料准备与中文图文报告生成插件。它读取视频链接或本地视频，准备字幕/转录、截图、评论、元数据和诊断证据，然后生成 quick/deep 中文 HTML 与长图报告。
 
-`video-bundle-agent` 是插件内部调用的 Python CLI，负责证据包准备；对外插件名称是 `Video Report Agent`。
-
 ---
 
-`Video Report Agent` wraps the internal `video-bundle-agent` Python CLI for Codex.
+`Video Report Agent` wraps the project's Python CLI workflow for Codex.
 
 The plugin contains two skills:
 
